@@ -55,10 +55,17 @@ const baseState = (): EpisodeState => ({
 });
 
 describe("onay kapıları", () => {
-  it("cast senaryo onayını, voice konsept onayını bekler", () => {
+  it("cast senaryo onayını, voice konsept onayını bekler; görsel kapısı yalnız yükleme modunda", () => {
     expect(gateBefore("cast")).toBe("script");
     expect(gateBefore("voice")).toBe("concept");
-    expect(gateBefore("keyframes")).toBeUndefined();
+    expect(gateBefore("keyframes")).toBe("images");
+    expect(gateBefore("clips")).toBeUndefined();
+    const s = baseState();
+    expect(isApproved(s, "images")).toBe(true);
+    s.input.imageSource = "upload";
+    s.input.autoApprove = true;
+    // Otomatik onay görsellerin yerini tutmaz.
+    expect(isApproved(s, "images")).toBe(false);
   });
 
   it("autoApprove tüm kapıları geçer (CLI)", () => {

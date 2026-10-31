@@ -11,3 +11,5 @@ export * from "./library.ts";
 export * from "./settings.ts";
 export * from "./series.ts";
 export * from "./lock.ts";
+export * from "./upload.ts";
+export * from "./youtube.ts";

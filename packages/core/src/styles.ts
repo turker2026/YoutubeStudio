@@ -157,6 +157,21 @@ export const STYLE_PACKS: readonly StylePack[] = [
     designNotes: "Flat colour areas with confident curved black outlines, stylised wave, cloud and wood-grain patterns, Prussian blue and soft beige. No gradients except a simple sky band.",
   },
   {
+    id: "showa-retro",
+    name: { tr: "Showa nostaljisi", en: "Showa nostalgia" },
+    suits: "Japan, Showa era (1950s–80s) nostalgia, childhood, old shops and streets, everyday life, Japanese food and festivals, slice of life",
+    artStyle: "warm nostalgic Showa-era Japanese slice-of-life illustration",
+    palette: ["#f3e3c3", "#c89f6b", "#8a5a32", "#c8463d", "#3f7f8c", "#e0a93b", "#3b2a1e"],
+    lighting: "warm soft afternoon light, gentle flat shading",
+    lensLanguage: "cosy eye-level and slightly low child's-eye views, interiors full of everyday detail",
+    promptPrefix:
+      "warm nostalgic Showa-era Japanese illustration, 1950s–1960s everyday life, clean bold dark-brown outlines, flat muted warm colours with soft paper grain, round friendly faces with rosy cheeks,",
+    negativeRules: [...NO_TEXT, "photorealism", "neon colours", "modern smartphones, cars or buildings", "anime fan-service"],
+    lineStyle: "outline",
+    designNotes:
+      "Bold even dark-brown outlines (#3b2a1e), flat warm fills in cream, wood brown, faded red, teal and mustard, one soft shadow tone, round heads with simple dot eyes and pink cheek circles, wooden interiors with shelves and hanging objects, period-correct 1950s–60s clothing and props.",
+  },
+  {
     id: "art-deco",
     name: { tr: "Art Deco", en: "Art Deco" },
     suits: "1920s–30s, luxury, ocean liners, skyscrapers, jazz age, early aviation",

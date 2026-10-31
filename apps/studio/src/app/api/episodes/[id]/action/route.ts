@@ -12,6 +12,8 @@ import {
   revokeApproval,
   selectCandidate,
   setMotion,
+  removeKeyframe,
+  uploadKeyframe,
   type MotionMode,
 } from "@ys/pipeline/light";
 import { cancelJob, episodeBusy, getJob, repo, startJob, store } from "../../../../../lib/server";
@@ -37,6 +39,9 @@ export type StudioAction =
   | { type: "set-realism"; enabled: boolean }
   | { type: "reuse-character"; castId: string; key: string }
   | { type: "set-series"; series?: string }
+  | { type: "upload-keyframe"; shotId: string; dataUrl: string }
+  | { type: "remove-keyframe"; shotId: string }
+  | { type: "approve-images" }
   | { type: "cancel" };
 
 /** Stüdyodaki her insan kararı ve iş başlatma buradan geçer. */
@@ -107,6 +112,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }
       case "set-series":
         await episodes.update(id, (s) => setSeries(s, typeof action.series === "string" ? action.series : undefined));
+        break;
+      case "upload-keyframe": {
+        // Görsel JSON içinde data URL olarak gelir (Stüdyo yazma istekleri yalnız JSON kabul eder).
+        const m = /^data:image\/[a-z+.-]+;base64,(.+)$/s.exec(typeof action.dataUrl === "string" ? action.dataUrl : "");
+        if (!m || typeof action.shotId !== "string") throw new Error("Geçersiz görsel");
+        const s = await episodes.load(id);
+        await uploadKeyframe(store(), s, action.shotId, new Uint8Array(Buffer.from(m[1]!, "base64")));
+        await episodes.save(s);
+        break;
+      }
+      case "remove-keyframe":
+        await episodes.update(id, (s) => removeKeyframe(s, action.shotId));
+        break;
+      case "approve-images":
+        await episodes.update(id, (s) => approve(s, "images"));
+        startJob(id, "job.produce", ["episode", "run", id]);
         break;
       case "set-realism":
         await episodes.update(id, (s) => setRealism(s, action.enabled));

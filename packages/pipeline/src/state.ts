@@ -1,6 +1,7 @@
 import type { CastOut, LessonTarget, MotionMode, ScriptOut, ShotPlanOut, StoryOut, StyleBibleOut } from "@ys/agents";
 import type { Ambience, AssetCheck, BudgetTier, FlagSpec, LineStyle, MapSpec, Timeline, VectorShot, WordTiming } from "@ys/core";
 import { stylePackOf } from "@ys/core";
+import type { YoutubePackage } from "./youtube.ts";
 
 export type { MotionMode };
 
@@ -16,6 +17,8 @@ export const STAGES = [
   "clips",
   "timeline",
   "render",
+  /** YouTube paketi: başlık seçenekleri, açıklama, bölümler, etiketler ve zorunlu atıflar. */
+  "package",
   /** Render sonrası inceleme: kareler denetlenir, dersler kalıcı deftere yazılır. */
   "review",
 ] as const;
@@ -25,6 +28,8 @@ export type Stage = (typeof STAGES)[number];
 export const GATES = {
   script: "cast",
   concept: "voice",
+  /** Yalnız kendi görsellerini yükleyen bölümlerde: her çekimin görseli yüklenince insan onaylar, render başlar. */
+  images: "keyframes",
 } as const satisfies Record<string, Stage>;
 export type Gate = keyof typeof GATES;
 
@@ -51,6 +56,11 @@ export interface EpisodeInput {
   series?: string;
   /** Stil paketi: "auto" (varsayılan, konuya göre ajan seçer), "custom" (serbest sanat yönetmeni) ya da paket kimliği. */
   stylePack?: string;
+  /**
+   * Görsellerin kaynağı. "generate" (varsayılan): görsel API'leri üretir. "upload": her çekimin görselini kullanıcı
+   * yükler (ör. ChatGPT'de üretip); konsept ve kare üretimine para gitmez, hareket modu "still" olur.
+   */
+  imageSource?: ImageSource;
   /** Kare kalite kontrolü (görsel model). Varsayılan açık; false ile kapatılır. */
   qa?: boolean;
   /**
@@ -62,6 +72,8 @@ export interface EpisodeInput {
   height: number;
   fps: number;
 }
+
+export type ImageSource = "generate" | "upload";
 
 export interface SceneVoice {
   key: string;
@@ -88,6 +100,8 @@ export interface PlannedShotState {
   camera: "push_in" | "pull_out" | "pan_left" | "pan_right" | "static";
   /** Eski planlarda yok; yoksa "none". */
   ambience?: Ambience;
+  /** Yükleme modunda: kullanıcının görsel aracına (ChatGPT vb.) yapıştıracağı tam prompt. */
+  uploadPrompt?: string;
   /** Vektör modunda sahne tarifi; varsa kare/klip üretilmez. */
   vector?: VectorShot;
   characterIds?: string[];
@@ -169,6 +183,8 @@ export interface EpisodeState {
   lastError?: EpisodeError;
   /** Bölümün anlatıcı sesini üreten sağlayıcı; sahneler arasında ses karışmasın diye sabitlenir. */
   voiceProviderId?: string;
+  /** Ses sağlayıcısının zorunlu atıf satırı (ör. "VOICEVOX:ずんだもん"); paketleme açıklamaya yazar. */
+  voiceCredit?: string;
   approvals?: Partial<Record<Gate, string>>;
   /** Pipeline bir onay kapısında durduysa hangisi. */
   waitingFor?: Gate;
@@ -178,6 +194,8 @@ export interface EpisodeState {
   script?: ScriptOut;
   cast?: CastOut;
   concept?: ConceptState;
+  /** Yükleme modunda karakter/mekân tasarım sayfası prompt'ları (kadro kimliği → prompt). */
+  sheetPrompts?: Record<string, string>;
   voice?: Record<string, SceneVoice>;
   shotPlan?: ShotPlanOut;
   shots?: PlannedShotState[];
@@ -204,6 +222,8 @@ export interface EpisodeState {
   clips?: Record<string, AssetRef & { durationSec: number }>;
   timeline?: Timeline;
   render?: { path: string; at: string };
+  /** Yükleme için başlık, açıklama, bölümler ve etiketler. */
+  package?: YoutubePackage;
 }
 
 /** Bu aşamaya geçmek için gereken onay (varsa). */
@@ -212,11 +232,25 @@ export function gateBefore(stage: Stage): Gate | undefined {
 }
 
 export function isApproved(state: EpisodeState, gate: Gate): boolean {
+  // Görsel kapısı yalnız yükleme modunda var; otomatik onay görselleri yerine koyamaz.
+  if (gate === "images") return !usesUploads(state.input) || Boolean(state.approvals?.images);
   return Boolean(state.input.autoApprove || state.approvals?.[gate]);
 }
 
+/** Görselleri kullanıcı mı yüklüyor (ChatGPT vb.)? */
+export function usesUploads(input: Pick<EpisodeInput, "imageSource">): boolean {
+  return input.imageSource === "upload";
+}
+
 export function motionModeOf(input: EpisodeInput): MotionMode {
+  // Yüklenen görseller hareketlendirilmiş resim olarak kullanılır; klip ya da vektör üretimi yok.
+  if (usesUploads(input)) return "still";
   return input.motionMode ?? (input.aiClipRatio > 0 ? "mixed" : "still");
+}
+
+/** Yükleme modunda görseli eksik çekimler. */
+export function missingUploads(state: Pick<EpisodeState, "shots" | "keyframes">): string[] {
+  return (state.shots ?? []).filter((s) => !state.keyframes?.[s.id]).map((s) => s.id);
 }
 
 /** Bölümün çizgi stili: kullanıcı seçtiyse o, yoksa stil paketininki. */

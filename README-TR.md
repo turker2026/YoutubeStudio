@@ -8,12 +8,15 @@ Mimari, sağlayıcı seçimi ve yol haritası: [docs/PROJE_PLANI.md](docs/PROJE_
 
 ## Özellikler
 
-- **Konudan bitmiş videoya.** Pipeline şu aşamalardan geçer: stil → hikâye → senaryo → *onay* → kadro → konsept → *onay* → ses → çekimler → kareler → klipler → kurgu → render → inceleme. Her aşama idempotent'tir ve her alt adımdan sonra kaydeder; hata alan çalıştırma kaldığı yerden devam eder.
+- **Konudan bitmiş videoya.** Pipeline şu aşamalardan geçer: stil → hikâye → senaryo → *onay* → kadro → konsept → *onay* → ses → çekimler → kareler → klipler → kurgu → render → paket → inceleme. Her aşama idempotent'tir ve her alt adımdan sonra kaydeder; hata alan çalıştırma kaldığı yerden devam eder.
 - **Dört hareket modu:**
   - `vector`: Claude'un çizdiği iskeletli SVG karakterler, hareketleri kodda. En ucuz mod.
   - `still`: Ken Burns hareketli görseller.
   - `mixed`: bazı çekimler AI video klibi olur.
   - `animated`: her çekim AI video klibi olur.
+- **Kendi görsellerin.** *Kendim yükleyeceğim* seçilirse hiçbir görsel API'si çağrılmaz. Senaryo, ses ve çekim planı burada hazırlanır; her çekim için ChatGPT'ye (ya da başka bir görsel aracına) olduğu gibi yapıştırılacak bir prompt çıkar. Görseller tutarlı kalsın diye stil, palet, karakterlerin sabit tarifi ve kare kuralları her prompt'ta yeniden yazılır. Görselleri Çekimler sekmesinden tek tek ya da toplu yükleyip onaylarsın, render burada alınır. Hareket: hareketlendirilmiş resim.
+- **VOICEVOX ile Japonca anlatım.** Bilgisayarda çalışan ücretsiz VOICEVOX motoru Japonca bölümleri seslendirir. Mora zamanlamalarından kesim ve altyazı için cümlecik zamanları kesin çıkar. Zorunlu `VOICEVOX:<karakter>` kredisi YouTube açıklamasına kendiliğinden eklenir.
+- **YouTube paketi.** Render'dan sonra bir ajan bölümün dilinde üç başlık seçeneği, açıklama, bölümler ve etiketler yazar. Bölüm zamanlarını kod ekler (ilki 0:00, her biri en az 10 sn), etiketleri YouTube sınırının altında tutar ve zorunlu atıfları ekler. Stüdyo'da kopyala düğmeleriyle, videonun yanında da `youtube.txt` olarak durur.
 - **Kalite kapısı.** Hiçbir SVG denetlenmeden kullanılmaz:
   1. Çizimden önce bir planlayıcı ajan referans görsellere bakar ve tarifi somut bir çizim planına çevirir.
   2. Kör denetçi, çizimin adını bilmeden ne gördüğünü söyler.
@@ -21,7 +24,7 @@ Mimari, sağlayıcı seçimi ve yol haritası: [docs/PROJE_PLANI.md](docs/PROJE_
   4. Geçemeyen çizim kusur listesiyle yeniden çizilir. Yine geçemezse kullanılmaz.
 - **Gerçeğe dayalı.** Gerçek özneler Wikipedia ve Wikimedia Commons'ta bulunan referans görsellere bakılarak çizilir. Nesneler için önce Commons'taki kamu malı/CC0 hazır vektör çizimler denenir; ancak aynı kalite kapısından geçerse kullanılır. Harita ve bayrakları Claude çizmez; gerçek veriden üretilir (world-atlas, flag-icons).
 - **Son söz insanın.** Stüdyo'da kapının reddettiği bir çizimi kabul edebilir, geçirdiğini de tasarımcıya bir notla reddedebilirsin. Gerçeklik denetimini bir bölüm için kapatabilirsin.
-- **24 hazır stil paketi.** Örneğin düz anlatım, Osmanlı minyatürü, kara film, teknik çizim, ukiyo-e, synthwave, kara tahta, suluboya ve 8-bit piksel. *Otomatik* modda ucuz bir ajan konuya uyan paketi seçer; istersen kendin seçebilir ya da *Özel* ile sanat yönetmenine serbest tasarım yaptırabilirsin. Paket renkleri, çizim kurallarını ve çizgi stilini sabitler; aynı paketteki bölümler aynı elden çıkmış görünür. Liste için: `pnpm ys styles`.
+- **25 hazır stil paketi.** Örneğin düz anlatım, Osmanlı minyatürü, kara film, teknik çizim, ukiyo-e, Showa nostaljisi, synthwave, kara tahta, suluboya ve 8-bit piksel. *Otomatik* modda ucuz bir ajan konuya uyan paketi seçer; istersen kendin seçebilir ya da *Özel* ile sanat yönetmenine serbest tasarım yaptırabilirsin. Paket renkleri, çizim kurallarını ve çizgi stilini sabitler; aynı paketteki bölümler aynı elden çıkmış görünür. Liste için: `pnpm ys styles`.
 - **Karakterleri tekrar kullanma.** Onaylı karakterler kimlikleriyle birlikte kütüphanede tutulur. Aynı kişi aynı stilde yeniden geçerse (ör. gerçek bir tarihî kişi ya da kanalın sunucusu) casting ajanı çizimi yeniden çizdirmek yerine tekrar kullanır. Stüdyo'da *Kütüphaneden kullan* ile kendin de seçebilirsin. Liste için: `pnpm ys library`.
 - **Seriler.** Bölümler bir seriye ait olabilir. Ana sayfa seriye göre filtreler. Var olan bir seriye eklenen yeni bölüm serinin ayarlarını ve stil paketini devralır; tekrar kullanım için önce o serinin karakterleri önerilir. CLI'da `--series "Ad"`.
 - **Öğrenme döngüsü.** Her render'dan sonra kareler incelenir; çıkan dersler sonraki bölümlerin uyduğu kural defterine yazılır.
@@ -35,6 +38,7 @@ Mimari, sağlayıcı seçimi ve yol haritası: [docs/PROJE_PLANI.md](docs/PROJE_
 - FFmpeg (yerel render testi için)
 - Claude: oturum açılmış bir Claude Code kurulumu (abonelik) ya da `ANTHROPIC_API_KEY`
 - İsteğe bağlı API anahtarları: fal, Gemini, ElevenLabs. Anahtarı olmayan sağlayıcı devre dışı kalır.
+- İsteğe bağlı, ücretsiz: Japonca anlatım için aynı bilgisayarda çalışan [VOICEVOX](https://voicevox.hiroshiba.jp/).
 
 ## Kurulum
 
@@ -61,11 +65,11 @@ pnpm studio                   # geliştirme: http://localhost:3100
 pnpm studio:build && pnpm studio:start   # production derlemesi, aynı port
 ```
 
-1. **Yeni bölüm.** Konuyu gir; dili, süreyi, hareket modunu, çizgi stilini, sesi, bütçeyi ve gerçeklik denetiminin açık olup olmayacağını seç. Canlı tahmin her mod için maliyeti ve süreyi gösterir.
+1. **Yeni bölüm.** Konuyu gir; dili, süreyi, hareket modunu, çizgi stilini, görselleri (burada üret ya da kendin yükle), sesi, bütçeyi ve gerçeklik denetiminin açık olup olmayacağını seç. Canlı tahmin her mod için maliyeti ve süreyi gösterir. VOICEVOX açıksa karakterleri ses listesinde görünür; Japonca seçilince biri önerilir.
 2. **Senaryo.** Sahneleri düzenle ve onayla.
 3. **Konsept.** Karakterler ve mekânlar seçilip çizilir. Kalite kapısı paneli her çizimi referanslarıyla, puanlarıyla, kusurlarıyla ve çizim planıyla gösterir. Kabul et, reddet ya da notla yeniden çizdir.
-4. **Üretim.** Pipeline şeridi, canlı panel ve etkinlik günlüğü her ajan çağrısını modeli, maliyeti ve süresiyle gösterir. Çekimler sekmesi render'dan önce her çekimin önizleme karesini gösterir.
-5. **İzle ve indir:** videoyu ve incelemesini gör.
+4. **Üretim.** Pipeline şeridi, canlı panel ve etkinlik günlüğü her ajan çağrısını modeli, maliyeti ve süresiyle gösterir. Çekimler sekmesi render'dan önce her çekimin önizleme karesini gösterir. Görselleri kendin yüklüyorsan Çekimler sekmesi her çekimi prompt'u ve yükleme kutusuyla listeler; hepsi yüklenince onaylarsın.
+5. **İzle ve indir:** videoyu izle, YouTube başlığını, açıklamasını ve etiketlerini kopyala, incelemesini gör.
 
 Diğer sayfalar:
 
@@ -85,6 +89,9 @@ pnpm ys episode run <id>                    # tüm aşamalar; hatadan sonra tekr
 pnpm ys episode run <id> --until script     # yalnız hikâye + senaryo (görsel ve ses için para harcamaz)
 pnpm ys episode run <id> --from keyframes   # bir aşamadan itibaren yeniden üretir
 pnpm ys episode show <id>
+pnpm ys episode prompts <id>                # kendi görsellerin: her çekimin ChatGPT prompt'u
+pnpm ys episode upload <id> ./gorseller     # kendi görsellerin: s1-sh2.png o çekime, kalanlar ad sırasıyla boş çekimlere
+pnpm ys episode approve <id> images         # görseller tamam, render'a devam
 pnpm ys cost --episode <id>
 pnpm ys plan --cap i2v --duration 5         # para harcamadan sağlayıcı sıralaması
 pnpm ys version
@@ -99,6 +106,8 @@ pnpm ys version
 - `--no-qa`: kare denetimini kapatır.
 - `--no-realism`: gerçeklik denetimini kapatır.
 - `--vertical`: 9:16 render eder.
+- `--images upload`: görselleri sen yüklersin (ChatGPT vb.); görsel parası yok.
+- `--voice voicevox:3`: VOICEVOX sesi (motordaki stil kimliği; 3 = ずんだもん).
 
 Hepsi için: `pnpm ys --help`.
 
@@ -109,6 +118,7 @@ Anahtarlar ve ayarlar `.env` dosyasında durur (bkz. `.env.example`). Önemliler
 | Değişken | Ne işe yarar |
 |---|---|
 | `FAL_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY` | Medya sağlayıcıları. Anahtar boşsa o sağlayıcı devre dışı kalır. |
+| `VOICEVOX_URL` | Yerel VOICEVOX motoru (genelde `http://127.0.0.1:50021`). `VOICEVOX_SPEED` konuşma hızını, `VOICEVOX_DEFAULT_STYLE` ses seçilmediğinde kullanılan sesi belirler. |
 | `ANTHROPIC_API_KEY` | Claude ajanları. Boşsa Claude Code girişi kullanılır. |
 | `YS_MODEL_CREATIVE` / `_FAST` / `_CHEAP` | Her sınıfın varsayılan modeli. Modeller sayfasındaki ajan başına seçimler bunları ezer. |
 | `STORE=s3`, `LEDGER=db` | Yerel dosyalar yerine S3 ve Postgres kullanır. |

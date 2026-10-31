@@ -1,6 +1,6 @@
 import type { Capability } from "@ys/core";
 import { billing, rankProviders, type GenerationRequest, type ProviderAdapter } from "@ys/media-gateway";
-import { gateBefore, isApproved, motionModeOf, STAGES, type EpisodeState, type MotionMode, type Stage } from "./state.ts";
+import { gateBefore, isApproved, motionModeOf, STAGES, usesUploads, type EpisodeState, type MotionMode, type Stage } from "./state.ts";
 
 /*
  * Bölüm maliyet ve süre tahmini. Para harcamaz, ağır bağımlılık yüklemez (stüdyo sunucusu çağırır).
@@ -21,6 +21,7 @@ export const STAGE_LABELS: Record<Stage, string> = {
   clips: "Animasyon",
   timeline: "Kurgu",
   render: "Render",
+  package: "YouTube paketi",
   review: "İnceleme",
 };
 
@@ -75,6 +76,8 @@ const REVIEW = { perBatch: 6, batchUsd: 0.006, batchSec: 8, stillSec: 0.8 };
 const PARALLEL = 3;
 const CHARS_PER_WORD = 6.5;
 const WPM_DEFAULT: Record<string, number> = { tr: 115, de: 125, fi: 110, en: 150, es: 155, pt: 150, fr: 150 };
+/** Boşluksuz dillerde dakikadaki karakter (agents `lengthBudget` ile aynı). */
+const CPM_UNSPACED: Record<string, number> = { ja: 300, zh: 250 };
 
 export interface EstimateRow {
   stage: Stage;
@@ -109,7 +112,9 @@ export interface EstimateContext {
 }
 
 export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeOverride?: MotionMode): EpisodeEstimate {
-  const input = { ...state.input, motionMode: modeOverride ?? motionModeOf(state.input) };
+  // Yükleme modunda hareket modu her zaman "still"; görsel üretimine para gitmez.
+  const uploads = usesUploads(state.input);
+  const input = { ...state.input, motionMode: uploads ? "still" : (modeOverride ?? motionModeOf(state.input)) };
   const mode = input.motionMode;
   const policy = { tier: input.tier };
   const warnings: string[] = [];
@@ -165,7 +170,9 @@ export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeO
   const chars = state.cast?.characters.length ?? 2;
   const locs = state.cast?.locations.length ?? 3;
   const conceptImages = chars * 3 + locs * 2 + 3;
-  const ci = price({ capability: "t2i", quality, aspectRatio });
+  // Yükleme modunda görsel sağlayıcısı aranmaz ("sağlayıcı yok" uyarısı yanıltıcı olurdu).
+  const noImage = { providerId: undefined, usd: 0, ms: 0, basis: "", units: 0, unit: "" };
+  const ci = uploads ? noImage : price({ capability: "t2i", quality, aspectRatio });
   const castNote = state.cast ? "" : `; kadro tahmini (${chars} karakter, ${locs} mekân)`;
   if (vector) {
     const assets = chars + locs;
@@ -181,6 +188,8 @@ export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeO
       seconds: (Math.ceil(assets / PARALLEL) * VECTOR.assetSec),
       basis: `ölçüm (30 Eki): karakter ~$${VECTOR.characterUsd}, mekân ~$${VECTOR.backgroundUsd}${castNote}; her çizim kalite kapısından geçer (~%${Math.round(GATE.extraDraws * 100)} ek çizim)`,
     });
+  } else if (uploads) {
+    add({ stage: "concept", providerId: "—", quantity: 0, unit: "görsel", costUsd: 0, seconds: 0, basis: "kendi görsellerin: konsept görseli üretilmez" });
   } else {
     add({
       stage: "concept",
@@ -197,7 +206,7 @@ export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeO
   const lang = input.lang.split("-")[0]!;
   const narrationChars =
     state.script?.scenes.reduce((n, s) => n + s.narration.length, 0) ??
-    Math.round(minutes * (WPM_DEFAULT[lang] ?? 140) * CHARS_PER_WORD);
+    Math.round(minutes * (CPM_UNSPACED[lang] ?? (WPM_DEFAULT[lang] ?? 140) * CHARS_PER_WORD));
   const scenes = state.script?.scenes.length ?? Math.max(1, Math.round(videoSec / 30));
   const vReq: GenerationRequest = {
     capability: "tts_timestamps",
@@ -254,17 +263,28 @@ export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeO
   }
 
   // --- kareler (referanslı)
-  const kf = price({
-    capability: "i2i_multiref",
-    quality,
-    aspectRatio,
-    refs: [{ role: "character", bytes: new Uint8Array(), mimeType: "image/png" }],
-  });
+  const kf = uploads
+    ? noImage
+    : price({
+        capability: "i2i_multiref",
+        quality,
+        aspectRatio,
+        refs: [{ role: "character", bytes: new Uint8Array(), mimeType: "image/png" }],
+      });
   // Kare denetimi: her kareye bir görsel model çağrısı, reddedilenler bir kez yeniden çizilir.
   const qaOn = state.input.qa !== false;
   const draws = shotCount * (qaOn ? 1 + QA.redrawRate : 1);
   const checks = qaOn ? draws : 0;
-  if (!vector) add({
+  if (uploads) add({
+    stage: "keyframes",
+    providerId: "yükleme",
+    quantity: shotCount,
+    unit: "görsel",
+    costUsd: 0,
+    seconds: 0,
+    basis: "kendi görsellerin (ChatGPT vb.); üretim parası yok",
+  });
+  else if (!vector) add({
     stage: "keyframes",
     providerId: kf.providerId,
     quantity: Math.round(draws),
@@ -325,6 +345,17 @@ export function estimateEpisode(state: EpisodeState, ctx: EstimateContext, modeO
     costUsd: 0,
     seconds: 30 + videoSec * (vector ? VECTOR.renderX : 1.1),
     basis: vector ? `tahmin: ~${VECTOR.renderX}× video süresi (vektör sahneler)` : "ölçüm (29 Eki): ~1,1× video süresi",
+  });
+
+  // --- YouTube paketi: tek kısa ajan çağrısı (Sonnet, girdi senaryo kadar). Henüz ölçülmedi: senaryo doktorundan kısa.
+  add({
+    stage: "package",
+    providerId: "claude",
+    quantity: 1,
+    unit: "çağrı",
+    costUsd: 0.02 + 0.004 * minutes,
+    seconds: 15 + 2 * minutes,
+    basis: "tahmin: başlık, açıklama, bölümler ve etiketler",
   });
 
   // --- inceleme: çekim başına bir kare (yerel), 6 karelik gruplar halinde ucuz görsel model

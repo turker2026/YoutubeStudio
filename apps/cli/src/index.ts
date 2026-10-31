@@ -41,13 +41,16 @@ Komutlar:
   episode new --topic "..." [--lang tr] [--minutes 3] [--tier economy] [--budget 10]
               [--clips 0.2] [--style "..."] [--voice id] [--vertical]
   episode run <id> [--until <aşama>] [--from <aşama>] [--only <aşama>]
-              aşamalar: style story script voice shots keyframes clips timeline render
+              aşamalar: style story script cast concept voice shots keyframes clips timeline render package review
   episode show <id>
-  episode approve <id> script|concept
+  episode approve <id> script|concept|images
+  episode prompts <id>              kendi görsellerin: her çekimin ChatGPT prompt'u
+  episode upload <id> <klasör>      kendi görsellerin: klasördeki görselleri çekimlere yükler (ad = çekim kimliği ya da ad sırası)
   episode select <id> <varlık>=<sıra>      örn. c1=2 (konsept adayı seç)
   episode preview <id>              seçilen referanslarla deneme kareleri
               new için: [--motion animated|mixed|still|vector] [--manual: onaylarda dur] [--no-qa: kare kontrolü kapalı] [--no-realism: gerçeklik denetimi kapalı] [--line outline|flat|sketch|ink]
               [--series "Seri adı"] [--style-pack auto|custom|<paket>]  (paketler: pnpm ys styles)
+              [--images generate|upload]  upload: görselleri sen yüklersin (ChatGPT vb.), görsel parası yok
   render-demo                       API'siz yerel Remotion testi (FFmpeg görselleri)
   lessons [--curate]                Orkestratörün ders defteri; --curate benzer kuralları birleştirir (Claude çağırır, ~$0.01)
 
@@ -124,6 +127,7 @@ async function main(): Promise<void> {
       series: { type: "string" },
       backfill: { type: "boolean", default: false },
       vertical: { type: "boolean", default: false },
+      images: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -237,6 +241,7 @@ async function main(): Promise<void> {
       stylePack: values["style-pack"],
       gate: positionals[3],
       pick: positionals[3],
+      folder: positionals[3],
       minutes: values.minutes,
       lang: values.lang,
     });

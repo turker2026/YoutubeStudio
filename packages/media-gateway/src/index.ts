@@ -11,3 +11,13 @@ export { ElevenLabsMusicAdapter, ElevenLabsSfxAdapter, ElevenLabsTtsAdapter } fr
 export { FalAdapter, type FalModelSpec } from "./providers/fal.ts";
 export { FAL_MODELS } from "./providers/fal-models.ts";
 export { GeminiImageAdapter, GeminiTtsAdapter, VeoAdapter } from "./providers/gemini.ts";
+export {
+  moraWordTimings,
+  VOICEVOX_DEFAULT_STYLE,
+  VOICEVOX_PREFIX,
+  VoicevoxTtsAdapter,
+  voicevoxSpeakers,
+  voicevoxStyleId,
+  type AudioQuery,
+  type VoicevoxSpeaker,
+} from "./providers/voicevox.ts";

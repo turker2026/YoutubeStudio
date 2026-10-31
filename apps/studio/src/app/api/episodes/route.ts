@@ -33,6 +33,7 @@ interface CreateBody {
   lineStyle?: string;
   stylePack?: string;
   series?: string;
+  imageSource?: string;
 }
 
 /** Bölümü oluşturur ve senaryo üretimini hemen başlatır (stil → hikâye → senaryo, sonra onay bekler). */
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
     // Boş: stil paketinin çizgi stili.
     lineStyle: body.lineStyle ? LineStyle.optional().catch(undefined).parse(body.lineStyle) : undefined,
     series: typeof body.series === "string" ? cleanSeries(body.series) : undefined,
+    imageSource: body.imageSource === "upload" ? "upload" : undefined,
     stylePack: body.stylePack === STYLE_CUSTOM || stylePackOf(body.stylePack) ? body.stylePack : STYLE_AUTO,
     width: body.vertical ? 1080 : 1920,
     height: body.vertical ? 1920 : 1080,

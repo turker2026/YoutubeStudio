@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { VectorAssetMeta } from "@ys/core";
 import { getJson, putJson, type AssetStore } from "@ys/storage";
 import { libraryIdOf, noteCharacterUse } from "./library.ts";
 import { cleanSeries } from "./series.ts";
-import { GATES, STAGES, type EpisodeInput, type EpisodeState, type Gate, type MotionMode } from "./state.ts";
+import { GATES, missingUploads, STAGES, usesUploads, type EpisodeInput, type EpisodeState, type Gate, type MotionMode } from "./state.ts";
 
 /*
  * İnsan kararları: onay, seçim, düzenleme. Ağır bağımlılık (Remotion, Agent SDK) içermez;
@@ -69,6 +70,12 @@ export function approve(state: EpisodeState, gate: Gate): void {
     const missing = missingSelections(state);
     if (missing.length) throw new Error(`Seçim yapılmamış: ${missing.join(", ")}`);
   }
+  if (gate === "images") {
+    if (!usesUploads(state.input)) throw new Error("Bu bölüm görsel yüklemiyor");
+    if (!state.shots?.length) throw new Error("Önce çekim planı çıkmalı");
+    const missing = missingUploads(state);
+    if (missing.length) throw new Error(`Görseli yüklenmemiş çekim: ${missing.join(", ")}`);
+  }
   state.approvals = { ...state.approvals, [gate]: new Date().toISOString() };
   if (state.waitingFor === gate) delete state.waitingFor;
 }
@@ -79,6 +86,8 @@ export function revokeApproval(state: EpisodeState, gate: Gate): void {
 }
 
 export function missingSelections(state: EpisodeState): string[] {
+  // Yükleme modunda konsept görseli üretilmez; kadro yalnız prompt'larda tarif olarak kullanılır.
+  if (usesUploads(state.input)) return [];
   const ids = [...(state.cast?.characters ?? []), ...(state.cast?.locations ?? [])].map((e) => e.id);
   return ids.filter((id) => !state.concept?.selected[id]);
 }
@@ -103,6 +112,7 @@ export function editNarration(state: EpisodeState, sceneId: string, narration: s
 
 export function setMotion(state: EpisodeState, motionMode: MotionMode, aiClipRatio?: number): void {
   if (state.approvals?.concept) throw new Error("Konsept onaylandı; hareket modu değiştirilemez");
+  if (usesUploads(state.input)) throw new Error("Görseller yükleniyor; hareket modu hareketlendirilmiş resimdir");
   // Görsel ve vektör modlarının konsept varlıkları farklıdır (PNG/JPEG ↔ SVG); geçişte konsept yeniden üretilir.
   const wasVector = state.input.motionMode === "vector";
   if (wasVector !== (motionMode === "vector") && state.concept) {
@@ -118,6 +128,7 @@ export function setMotion(state: EpisodeState, motionMode: MotionMode, aiClipRat
  * Her yeniden çizim yeni bir seed alır, yoksa aynı istek önbellekten aynı kareyi döndürürdü.
  */
 export function redrawShots(state: EpisodeState, shotIds: string[]): void {
+  if (usesUploads(state.input)) throw new Error("Görseller yükleniyor; yeniden çizim yerine yeni görsel yükle");
   const known = new Set(state.shots?.map((s) => s.id));
   const ids = shotIds.filter((id) => known.has(id));
   if (ids.length === 0) throw new Error("Yeniden çizilecek çekim yok");
@@ -129,6 +140,49 @@ export function redrawShots(state: EpisodeState, shotIds: string[]): void {
     delete state.clips?.[id];
   }
   delete state.lastError;
+  invalidateFrom(state, "keyframes");
+}
+
+// ---------------- kendi görsellerim (yükleme modu) ----------------
+
+/** Yüklenebilen görseller: dosyanın ilk baytlarından tanınır (uzantıya ya da beyan edilen türe güvenilmez). */
+const IMAGE_MAGIC: { mimeType: string; ext: string; test: (b: Uint8Array) => boolean }[] = [
+  { mimeType: "image/png", ext: "png", test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { mimeType: "image/jpeg", ext: "jpg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  {
+    mimeType: "image/webp",
+    ext: "webp",
+    test: (b) => String.fromCharCode(...b.subarray(0, 4)) === "RIFF" && String.fromCharCode(...b.subarray(8, 12)) === "WEBP",
+  },
+];
+
+export const UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Çekimin görselini kullanıcı yükler (ChatGPT vb. ile üretilmiş). İçerik hash'li anahtar: aynı çekime yeni görsel
+ * yüklenince tarayıcı eskisini önbellekten göstermez. Render edilmiş bölümde görsel değişirse kurgu yeniden yapılır.
+ */
+export async function uploadKeyframe(store: AssetStore, state: EpisodeState, shotId: string, bytes: Uint8Array): Promise<void> {
+  if (!usesUploads(state.input)) throw new Error("Bu bölüm görsel yüklemiyor");
+  if (!state.shots?.some((s) => s.id === shotId)) throw new Error(`Çekim yok: ${shotId}`);
+  if (bytes.length > UPLOAD_MAX_BYTES) throw new Error(`Görsel çok büyük (en çok ${UPLOAD_MAX_BYTES / 1024 / 1024} MB)`);
+  const kind = IMAGE_MAGIC.find((m) => m.test(bytes));
+  if (!kind) throw new Error("Desteklenmeyen görsel (PNG, JPEG ya da WebP olmalı)");
+  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+  const key = `assets/uploads/${state.id}/${shotId}-${hash}.${kind.ext}`;
+  await store.put(key, bytes, kind.mimeType);
+  (state.keyframes ??= {})[shotId] = { key, mimeType: kind.mimeType };
+  delete state.stills?.[shotId];
+  delete state.lastError;
+  if (state.done.keyframes) invalidateFrom(state, "keyframes");
+}
+
+/** Yüklenen görseli çekimden kaldırır; görsel onayı geri alınır (eksik görselle render edilmez). */
+export function removeKeyframe(state: EpisodeState, shotId: string): void {
+  if (!usesUploads(state.input)) throw new Error("Bu bölüm görsel yüklemiyor");
+  delete state.keyframes?.[shotId];
+  delete state.stills?.[shotId];
+  if (state.approvals) delete state.approvals.images;
   invalidateFrom(state, "keyframes");
 }
 

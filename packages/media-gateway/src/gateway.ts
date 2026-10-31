@@ -142,6 +142,18 @@ export class MediaGateway {
     }
   }
 
+  /** Sağlayıcının videoda istediği atıf satırı; gerekmiyorsa ya da sorgu başarısızsa undefined. */
+  async credit(providerId: string, voiceId: string | undefined): Promise<string | undefined> {
+    const adapter = this.opts.providers.find((p) => p.id === providerId);
+    if (!adapter?.credit) return undefined;
+    try {
+      return await adapter.credit(voiceId, { fetch: this.fetchFn });
+    } catch (e) {
+      this.log(`atıf sorgulanamadı: ${providerId}: ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
+  }
+
   /** Para harcamadan hangi sağlayıcıların hangi sırayla deneneceğini gösterir. */
   plan(req: GenerationRequest, policy: RoutePolicy): RankedProvider[] {
     return rankProviders(this.opts.providers, req, policy, this.health);

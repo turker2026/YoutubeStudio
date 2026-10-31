@@ -5,6 +5,7 @@ import {
   castingDirector,
   director,
   frameInspector,
+  packager,
   screenwriter,
   sceneCritic,
   stylePicker,
@@ -36,6 +37,8 @@ import {
   styleFromPack,
   stylePackOf,
   gatePasses,
+  isUnspacedLang,
+  narrationLength,
   QUALITY_GATE,
   resolveLayout,
   RIG,
@@ -72,6 +75,8 @@ import { loadLessons, mergeLessons, saveLessons, topLessons, type LessonBook } f
 import { invalidateFrom, missingSelections, newEpisodeState } from "./actions.ts";
 import { mapLimit, normalizeClip, probeDurationMs } from "./media.ts";
 import { anonymizeNames, castAliases } from "./names.ts";
+import { sheetPrompts, uploadPromptFor } from "./upload.ts";
+import { buildPackage, packageText } from "./youtube.ts";
 import { generateFlag, generateMap } from "./geo.ts";
 import { findReferences, findVectorSources, rasterizeSvg, searchQuery, type References } from "./reference.ts";
 import { frameRank, judgeFrame, QA_MAX_BYTES, redrawPrompt } from "./qa.ts";
@@ -79,6 +84,8 @@ import {
   ACTIVITY_LIMIT,
   STAGES,
   gateBefore,
+  missingUploads,
+  usesUploads,
   isApproved,
   motionModeOf,
   type ActivityEntry,
@@ -185,6 +192,11 @@ export class EpisodePipeline {
   }
 
   private stateKey = (id: string) => `episodes/${id}/state.json`;
+
+  /** Bölüm varlıklarının deposu (CLI görsel yüklerken kullanır). */
+  get store(): AssetStore {
+    return this.deps.store;
+  }
 
   async create(input: EpisodeInput): Promise<EpisodeState> {
     const state = newEpisodeState(input);
@@ -1174,6 +1186,7 @@ export class EpisodePipeline {
     const { script, cast, concept } = state;
     if (!script || !cast || !concept) throw new Error("Önce casting ve konsept aşamaları çalışmalı");
     if (motionModeOf(state.input) === "vector") throw new Error("Vektör modunda deneme karesi yok; varlıklar zaten önizleniyor");
+    if (usesUploads(state.input)) throw new Error("Görseller yükleniyor; deneme karesi üretilmez");
     const missing = missingSelections(state);
     if (missing.length) throw new Error(`Seçim yapılmamış: ${missing.join(", ")}`);
 
@@ -1229,8 +1242,9 @@ export class EpisodePipeline {
       const book = await loadLessons(this.deps.store);
       const brief = { ...this.brief(state), lessons: topLessons(book, "script") };
       const draft = await this.agent(state, "script", screenwriter(brief, state.story, this.agentDeps));
-      const count = (s: typeof draft) => s.scenes.reduce((n, sc) => n + sc.narration.split(/\s+/).length, 0);
-      this.log(`  taslak: ${draft.scenes.length} sahne, ${count(draft)} kelime`);
+      const unit = isUnspacedLang(state.input.lang) ? "karakter" : "kelime";
+      const count = (s: typeof draft) => s.scenes.reduce((n, sc) => n + narrationLength(sc.narration, state.input.lang), 0);
+      this.log(`  taslak: ${draft.scenes.length} sahne, ${count(draft)} ${unit}`);
       // İkinci geçiş: senaryo doktoru açılışı, temposu ve doğruluğu düzeltir. Sahne kimlikleri değişmez.
       const doctored = await this.agent(state, "script", scriptDoctor(brief, state.story, draft, this.agentDeps));
       const ids = (s: typeof draft) => s.scenes.map((sc) => sc.id).join(",");
@@ -1239,7 +1253,7 @@ export class EpisodePipeline {
       mergeLessons(book, doctored.notes.map((rule) => ({ target: "script" as const, rule })), state.id);
       await this.curate(state, book);
       await saveLessons(this.deps.store, book);
-      this.log(`  doktor: ${count(state.script)} kelime; ${doctored.notes.length} düzeltme${state.script === draft ? " (sahne yapısı değişti, taslak kullanıldı)" : ""}`);
+      this.log(`  doktor: ${count(state.script)} ${unit}; ${doctored.notes.length} düzeltme${state.script === draft ? " (sahne yapısı değişti, taslak kullanıldı)" : ""}`);
     },
 
     cast: async (state) => {
@@ -1296,6 +1310,13 @@ export class EpisodePipeline {
       const { cast } = state;
       if (!cast) throw new Error("cast yok");
       if (motionModeOf(state.input) === "vector") return this.vectorConcept(state, opts.only === "concept");
+      if (usesUploads(state.input)) {
+        // Görselleri kullanıcı üretir: konsept görseli için para harcanmaz, yalnız tasarım sayfası prompt'ları çıkar.
+        state.concept = { candidates: {}, selected: {} };
+        state.sheetPrompts = sheetPrompts(state);
+        this.log(`  kendi görsellerin: ${Object.keys(state.sheetPrompts).length} tasarım sayfası prompt'u hazır (görsel üretilmedi)`);
+        return;
+      }
       const previous = state.concept;
       // "Yeni adaylar üret" yeni tur açar: farklı seed → önbellek aynı görselleri döndürmez. Hata sonrası devam ise aynı
       // turu sürdürür: aynı seed'li istekler önbellekten bedava gelir, yalnız eksikler ödenir.
@@ -1413,6 +1434,12 @@ export class EpisodePipeline {
         await this.save(state);
         this.log(`  ${scene.id}: ${(durationMs / 1000).toFixed(1)} sn (${res.providerId})`);
       }
+      // Atıf isteyen ses (VOICEVOX karakterleri): kredi satırı paketlemede açıklamaya yazılır.
+      if (state.voiceProviderId) {
+        const credit = await gateway.credit(state.voiceProviderId, state.input.voiceId);
+        if (credit) state.voiceCredit = credit;
+        else delete state.voiceCredit;
+      }
     },
 
     shots: async (state) => {
@@ -1421,6 +1448,7 @@ export class EpisodePipeline {
       const durations = Object.fromEntries(script.scenes.map((s) => [s.id, (voice[s.id]?.durationMs ?? 0) / 1000]));
       const motionMode = motionModeOf(state.input);
       if (motionMode === "vector") return this.vectorShots(state, durations);
+      const previousPrompts = new Map((state.shots ?? []).map((s) => [s.id, s.uploadPrompt]));
       state.shotPlan = await this.agent(
         state,
         "shots",
@@ -1441,6 +1469,22 @@ export class EpisodePipeline {
       if (motionMode !== "mixed") {
         for (const s of state.shots) s.kind = motionMode === "animated" ? "ai_clip" : "still_motion";
       }
+      if (usesUploads(state.input)) {
+        // Yeniden planlamada (ör. ses değişti) prompt'u aynı kalan çekimin yüklenmiş görseli korunur.
+        const kept = Object.fromEntries(
+          state.shots
+            .map((s) => ({ s, ref: state.keyframes?.[s.id], prompt: uploadPromptFor(state, s) }))
+            .filter(({ s, ref, prompt }) => ref && previousPrompts.get(s.id) === prompt)
+            .map(({ s, ref }) => [s.id, ref!]),
+        );
+        for (const s of state.shots) s.uploadPrompt = uploadPromptFor(state, s);
+        state.keyframes = kept;
+        if (state.approvals) delete state.approvals.images;
+        state.qa = {};
+        state.clips = {};
+        this.log(`  ${state.shots.length} çekim; görselleri sen yükleyeceksin (${Object.keys(kept).length} görsel korundu)`);
+        return;
+      }
       state.keyframes = {};
       state.qa = {};
       state.clips = {};
@@ -1451,6 +1495,12 @@ export class EpisodePipeline {
       const { shots, style } = state;
       if (!shots || !style) throw new Error("shots/style yok");
       if (motionModeOf(state.input) === "vector") return this.vectorProps(state);
+      if (usesUploads(state.input)) {
+        const missing = missingUploads(state);
+        if (missing.length) throw new Error(`Görseli yüklenmemiş çekim: ${missing.join(", ")}`);
+        this.log(`  ${shots.length} yüklenmiş görsel kullanılıyor`);
+        return;
+      }
       state.keyframes ??= {};
       const keyframes = state.keyframes;
       const todo = shots.filter((s) => !keyframes[s.id]);
@@ -1583,6 +1633,19 @@ export class EpisodePipeline {
       });
       state.render = { path: outputPath, at: new Date().toISOString() };
       this.log(`  ✓ ${outputPath}`);
+    },
+
+    package: async (state) => {
+      const { story, script } = state;
+      if (!story || !script || !state.voice) throw new Error("story/script/voice yok");
+      const out = await this.agent(state, "package", packager({ lang: state.input.lang, topic: state.input.topic }, story, script, this.agentDeps));
+      state.package = buildPackage(state, out);
+      // Videonun yanına düz metin: Stüdyo açmadan da kopyalanabilsin.
+      const dir = resolve(this.deps.workDir, state.id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "youtube.txt"), packageText(state.package));
+      const p = state.package;
+      this.log(`  "${p.titles[0] ?? "?"}" · ${p.chapters.length} bölüm · ${p.tags.length} etiket${p.credits.length ? ` · atıf: ${p.credits.join(", ")}` : ""}`);
     },
 
     review: async (state) => {

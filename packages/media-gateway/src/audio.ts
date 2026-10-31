@@ -26,6 +26,29 @@ export function unwrapNestedWav(bytes: Uint8Array): Uint8Array | undefined {
   return inner.slice(0, Math.min(size, inner.length));
 }
 
+/**
+ * WAV süresi (ms): "fmt " parçasındaki bayt hızı ve "data" parçasının boyu. Parçalar sırayla taranır; VOICEVOX
+ * gibi motorlar "data" öncesine ek parça koyabilir. Okunamazsa undefined.
+ */
+export function wavDurationMs(bytes: Uint8Array): number | undefined {
+  if (!isWav(bytes)) return undefined;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= bytes.length; ) {
+    const id = String.fromCharCode(...bytes.subarray(at, at + 4));
+    const size = view.getUint32(at + 4, true);
+    if (id === "fmt " && at + 20 <= bytes.length) byteRate = view.getUint32(at + 16, true);
+    if (id === "data") {
+      if (!byteRate) return undefined;
+      // Akışla yazılan dosyalarda boy alanı 0xFFFFFFFF olabiliyor; dosyada kalan bayt esas alınır.
+      const len = Math.min(size, bytes.length - at - 8);
+      return Math.round((len / byteRate) * 1000);
+    }
+    at += 8 + size + (size % 2);
+  }
+  return undefined;
+}
+
 /** Ham 16-bit little-endian PCM'i WAV kabına sarar. */
 export function pcm16ToWav(pcm: Uint8Array, sampleRate = 24_000, channels = 1): Uint8Array {
   const header = new DataView(new ArrayBuffer(44));

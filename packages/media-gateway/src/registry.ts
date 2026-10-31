@@ -6,6 +6,7 @@ import { ElevenLabsMusicAdapter, ElevenLabsSfxAdapter, ElevenLabsTtsAdapter } fr
 import { FalAdapter } from "./providers/fal.ts";
 import { FAL_MODELS } from "./providers/fal-models.ts";
 import { GeminiImageAdapter, GeminiTtsAdapter, VeoAdapter } from "./providers/gemini.ts";
+import { VoicevoxTtsAdapter } from "./providers/voicevox.ts";
 import type { ProviderAdapter } from "./types.ts";
 
 const GEMINI_PRICING = "https://ai.google.dev/gemini-api/docs/pricing";
@@ -36,6 +37,20 @@ export function createProvidersFromEnv(env: NodeJS.ProcessEnv, comfyDir = DEFAUL
     }
   } else {
     skipped.push("comfy:* (COMFYUI_URL veya manifest.json yok)");
+  }
+
+  // --- Yerel VOICEVOX (Japonca TTS) ---
+  if (env.VOICEVOX_URL) {
+    const speed = Number(env.VOICEVOX_SPEED);
+    const style = Number(env.VOICEVOX_DEFAULT_STYLE);
+    providers.push(
+      new VoicevoxTtsAdapter(env.VOICEVOX_URL.replace(/\/+$/, ""), {
+        ...(speed > 0 ? { speedScale: speed } : {}),
+        ...(Number.isInteger(style) && env.VOICEVOX_DEFAULT_STYLE ? { defaultStyle: style } : {}),
+      }),
+    );
+  } else {
+    skipped.push("voicevox:tts (VOICEVOX_URL yok)");
   }
 
   // --- fal ---

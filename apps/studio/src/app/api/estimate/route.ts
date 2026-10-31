@@ -11,6 +11,7 @@ interface Body {
   budgetUsd?: number;
   vertical?: boolean;
   qa?: boolean;
+  imageSource?: string;
 }
 
 /** Yeni bölüm formu için canlı tahmin: henüz oluşturulmamış bir bölümün üç hareket modundaki maliyet ve süresi. */
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
     budgetUsd: b.budgetUsd || 20,
     voiceId: b.voiceId || undefined,
     qa: b.qa !== false,
+    imageSource: b.imageSource === "upload" ? "upload" : undefined,
     width: b.vertical ? 1080 : 1920,
     height: b.vertical ? 1920 : 1080,
     fps: 30,

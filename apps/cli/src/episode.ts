@@ -1,13 +1,15 @@
 import { LineStyle, STYLE_AUTO, STYLE_CUSTOM, STYLE_PACK_IDS } from "@ys/core";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join, parse } from "node:path";
 import { promisify } from "node:util";
 import { BudgetTier } from "@ys/core";
 import {
   approve,
   EpisodePipeline,
+  missingUploads,
+  uploadKeyframe,
   estimateWordTimings,
   selectCandidate,
   STAGES,
@@ -41,6 +43,8 @@ export interface EpisodeArgs {
   gate?: string;
   pick?: string;
   vertical?: boolean;
+  images?: string;
+  folder?: string;
 }
 
 const parseStage = (s: string | undefined): Stage | undefined => {
@@ -78,6 +82,7 @@ export async function episodeCommand(
         lineStyle: args.line ? LineStyle.parse(args.line) : undefined,
         stylePack: parseStylePack(args.stylePack),
         series: args.series?.trim() || undefined,
+        imageSource: parseImages(args.images),
         width: args.vertical ? 1080 : 1920,
         height: args.vertical ? 1920 : 1080,
         fps: 30,
@@ -91,7 +96,9 @@ export async function episodeCommand(
       return;
     }
     case "approve": {
-      if (!id || (args.gate !== "script" && args.gate !== "concept")) throw new Error("Kullanım: episode approve <id> script|concept");
+      if (!id || (args.gate !== "script" && args.gate !== "concept" && args.gate !== "images")) {
+        throw new Error("Kullanım: episode approve <id> script|concept|images");
+      }
       const state = await pipeline.load(id);
       approve(state, args.gate);
       await pipeline.save(state);
@@ -117,19 +124,52 @@ export async function episodeCommand(
       printSummary(state);
       return;
     }
+    case "prompts": {
+      if (!id) throw new Error("bölüm kimliği gerekli");
+      const state = await pipeline.load(id);
+      if (!state.shots?.some((s) => s.uploadPrompt)) throw new Error("Görsel prompt'u yok: bölüm görsel yüklemiyor ya da çekim planı çıkmadı");
+      for (const shot of state.shots) console.log(`### ${shot.id}${state.keyframes?.[shot.id] ? " ✓" : ""}\n${shot.uploadPrompt ?? ""}\n`);
+      return;
+    }
+    case "upload": {
+      // Klasördeki görseller: adı çekim kimliği olan ("s1-sh2.png") o çekime, kalanlar ad sırasıyla eksik çekimlere.
+      if (!id || !args.folder) throw new Error("Kullanım: episode upload <id> <klasör>");
+      const state = await pipeline.load(id);
+      const files = (await readdir(args.folder)).filter((f) => /^\.(png|jpe?g|webp)$/i.test(extname(f))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const shotIds = new Set(state.shots?.map((s) => s.id));
+      const named = files.filter((f) => shotIds.has(parse(f).name));
+      const rest = files.filter((f) => !named.includes(f));
+      const plan: [string, string][] = named.map((f) => [parse(f).name, f]);
+      const open = missingUploads(state).filter((sid) => !plan.some(([p]) => p === sid));
+      rest.slice(0, open.length).forEach((f, i) => plan.push([open[i]!, f]));
+      for (const [shotId, file] of plan) {
+        await uploadKeyframe(pipeline.store, state, shotId, new Uint8Array(await readFile(join(args.folder, file))));
+        console.log(`  ${shotId} ← ${file}`);
+      }
+      await pipeline.save(state);
+      const missing = missingUploads(state);
+      console.log(missing.length ? `Eksik: ${missing.join(", ")}` : `Tüm görseller yüklendi → pnpm ys episode approve ${id} images`);
+      return;
+    }
     case "show": {
       if (!id) throw new Error("bölüm kimliği gerekli");
       printSummary(await pipeline.load(id));
       return;
     }
     default:
-      throw new Error("Kullanım: episode new|run|show|preview|approve|select");
+      throw new Error("Kullanım: episode new|run|show|preview|approve|select|prompts|upload");
   }
 }
 
 function parseMotion(m: string | undefined): MotionMode | undefined {
   if (m === undefined) return undefined;
   if (m !== "animated" && m !== "mixed" && m !== "still" && m !== "vector") throw new Error("--motion animated|mixed|still|vector");
+  return m;
+}
+
+function parseImages(m: string | undefined): "generate" | "upload" | undefined {
+  if (m === undefined) return undefined;
+  if (m !== "generate" && m !== "upload") throw new Error("--images generate|upload");
   return m;
 }
 

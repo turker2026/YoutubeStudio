@@ -73,7 +73,10 @@ function FadeIn({ children }: { children: ReactNode }) {
   return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
 }
 
-function Captions({ captions }: { captions: Timeline["captions"] }) {
+/** Boşluksuz yazan diller: altyazı parçaları (cümlecikler) arasına boşluk konmaz. */
+const UNSPACED = /^(ja|zh)\b/;
+
+function Captions({ captions, lang }: { captions: Timeline["captions"]; lang: string }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const nowMs = (frame / fps) * 1000;
@@ -91,6 +94,8 @@ function Captions({ captions }: { captions: Timeline["captions"] }) {
 
   const page = pages.find((p) => nowMs >= p.startMs && nowMs < p.startMs + p.durationMs);
   if (!page) return null;
+  // Sayfalama boşlukla başlayan parçalardan bölündüğü için boşluk parçalarda kalır, yalnız gösterimde atılır.
+  const unspaced = UNSPACED.test(lang);
 
   return (
     <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 90 }}>
@@ -98,7 +103,7 @@ function Captions({ captions }: { captions: Timeline["captions"] }) {
         style={{
           maxWidth: "80%",
           textAlign: "center",
-          fontFamily: "Inter, 'Noto Sans', 'Segoe UI', sans-serif",
+          fontFamily: "Inter, 'Noto Sans', 'Noto Sans JP', 'Yu Gothic', 'Hiragino Sans', 'Segoe UI', sans-serif",
           fontSize: 54,
           fontWeight: 800,
           lineHeight: 1.25,
@@ -111,7 +116,7 @@ function Captions({ captions }: { captions: Timeline["captions"] }) {
           const active = nowMs >= t.fromMs && nowMs < t.toMs;
           return (
             <span key={t.fromMs} style={{ color: active ? "#FFD84D" : "white" }}>
-              {t.text}
+              {unspaced ? t.text.trimStart() : t.text}
             </span>
           );
         })}
@@ -151,7 +156,7 @@ export function Episode({ timeline }: EpisodeProps) {
         </Sequence>
       ))}
 
-      {timeline.captions.length > 0 && <Captions captions={timeline.captions} />}
+      {timeline.captions.length > 0 && <Captions captions={timeline.captions} lang={timeline.lang} />}
     </AbsoluteFill>
   );
 }

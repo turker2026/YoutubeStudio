@@ -8,12 +8,15 @@ Architecture, provider choices and the roadmap are in [docs/PROJE_PLANI.md](docs
 
 ## Features
 
-- **Topic to finished video.** The pipeline runs these stages: style → story → script → *approval* → cast → concept → *approval* → voice → shots → keyframes → clips → timeline → render → review. Every stage is idempotent and saves after each sub-step, so a failed run resumes where it stopped.
+- **Topic to finished video.** The pipeline runs these stages: style → story → script → *approval* → cast → concept → *approval* → voice → shots → keyframes → clips → timeline → render → package → review. Every stage is idempotent and saves after each sub-step, so a failed run resumes where it stopped.
 - **Four motion modes:**
   - `vector`: Claude-drawn SVG characters on a rig, animated in code. This is the cheapest mode.
   - `still`: images with Ken Burns motion.
   - `mixed`: some shots become AI video clips.
   - `animated`: every shot becomes an AI video clip.
+- **Bring your own images.** Pick *I'll upload my own* and no image API is called. The script, voice and shot plan are made here, and every shot gets a ready-to-paste prompt for ChatGPT or any other image tool: style, palette, the characters' fixed descriptions and frame rules are written out each time so the images stay consistent. Upload the images in the Shots tab (one by one or in bulk), approve them, and the render runs here. Motion is animated stills.
+- **Japanese narration with VOICEVOX.** A local, free VOICEVOX engine can voice Japanese episodes. Its mora timings give exact clause timing for cuts and subtitles. The required `VOICEVOX:<character>` credit is added to the YouTube description automatically.
+- **YouTube package.** After the render an agent writes three title options, a description, chapters and tags in the episode's language. The code adds the chapter timestamps (first at 0:00, each at least 10 s), keeps the tags under YouTube's limit and appends required credits. It appears in the Studio with copy buttons and as `youtube.txt` next to the video.
 - **Quality gate.** No SVG is used without a check:
   1. Before drawing, a planner agent studies reference images and turns the description into a concrete drawing plan.
   2. A blind reviewer says what the drawing shows without being told its name.
@@ -21,7 +24,7 @@ Architecture, provider choices and the roadmap are in [docs/PROJE_PLANI.md](docs
   4. Drawings that fail are redrawn with the list of defects. If they still fail, they are not used.
 - **Grounded in reality.** Real subjects are drawn from reference images found on Wikipedia and Wikimedia Commons. For objects, a ready-made public-domain/CC0 vector drawing from Commons is tried first; it is used only if it passes the same quality gate. Claude does not draw maps or flags: they are generated from real data (world-atlas, flag-icons).
 - **The human has the final say.** In the Studio you can accept a drawing the gate rejected, or reject one it passed and add a note for the designer. You can also turn the reality check off for one episode.
-- **24 ready-made style packs.** Examples include flat explainer, Ottoman miniature, film noir, blueprint, ukiyo-e, synthwave, chalkboard, watercolour and 8-bit pixel. In *Automatic* mode a cheap agent picks the pack that fits the topic; you can also choose one yourself, or choose *Custom* to let the art director design freely. A pack fixes the colours, drawing rules and line style, so all episodes in a pack look as if the same hand made them. Run `pnpm ys styles` to list them.
+- **25 ready-made style packs.** Examples include flat explainer, Ottoman miniature, film noir, blueprint, ukiyo-e, Showa nostalgia, synthwave, chalkboard, watercolour and 8-bit pixel. In *Automatic* mode a cheap agent picks the pack that fits the topic; you can also choose one yourself, or choose *Custom* to let the art director design freely. A pack fixes the colours, drawing rules and line style, so all episodes in a pack look as if the same hand made them. Run `pnpm ys styles` to list them.
 - **Character reuse.** Approved characters are kept in a library together with their identity. When the same person appears again in the same style (for example a real historical figure or the channel's host), the casting agent reuses the drawing instead of redrawing it. In the Studio you can also pick one with *Use from library*. Run `pnpm ys library` to list them.
 - **Series.** Episodes can belong to a series. The home page filters by series. A new episode in an existing series inherits that series' settings and style pack, and the series' own characters are offered first for reuse. Use `--series "Name"` in the CLI.
 - **Learning loop.** After each render the frames are reviewed, and lessons are written to a rule book that later episodes follow.
@@ -35,6 +38,7 @@ Architecture, provider choices and the roadmap are in [docs/PROJE_PLANI.md](docs
 - FFmpeg (for the local render test)
 - Claude: either a signed-in Claude Code installation (subscription) or `ANTHROPIC_API_KEY`
 - Optional API keys: fal, Gemini, ElevenLabs. Providers without a key are disabled.
+- Optional, free: [VOICEVOX](https://voicevox.hiroshiba.jp/) running on the same computer, for Japanese narration.
 
 ## Setup
 
@@ -61,11 +65,11 @@ pnpm studio                   # development: http://localhost:3100
 pnpm studio:build && pnpm studio:start   # production build, same port
 ```
 
-1. **New episode.** Enter a topic, then choose the language, length, motion mode, line style, voice, budget and whether the reality check is on. A live estimate shows cost and duration for each mode.
+1. **New episode.** Enter a topic, then choose the language, length, motion mode, line style, images (generate here or upload your own), voice, budget and whether the reality check is on. A live estimate shows cost and duration for each mode. With VOICEVOX running, its characters appear in the voice list; choosing Japanese suggests one.
 2. **Script.** Edit the scenes and approve them.
 3. **Concept.** Characters and places are cast and drawn. The quality-gate panel shows each drawing with its references, scores, defects and drawing plan. Accept, reject or redraw with a note.
-4. **Production.** The pipeline rail, live panel and activity log show every agent call with its model, cost and duration. The Shots tab shows a preview frame of every shot before the render.
-5. **Watch and download** the video, and read its review.
+4. **Production.** The pipeline rail, live panel and activity log show every agent call with its model, cost and duration. The Shots tab shows a preview frame of every shot before the render. If you upload your own images, the Shots tab instead lists every shot with its prompt and an upload box; approve when all are in.
+5. **Watch and download** the video, copy the YouTube title, description and tags, and read its review.
 
 Other pages:
 
@@ -85,6 +89,9 @@ pnpm ys episode run <id>                    # all stages; run again to resume af
 pnpm ys episode run <id> --until script     # story + script only (no image or voice spend)
 pnpm ys episode run <id> --from keyframes   # regenerate from a stage
 pnpm ys episode show <id>
+pnpm ys episode prompts <id>                # own images: every shot's prompt for ChatGPT
+pnpm ys episode upload <id> ./images        # own images: file named s1-sh2.png goes to that shot, the rest fill empty shots in name order
+pnpm ys episode approve <id> images         # images done, continue to the render
 pnpm ys cost --episode <id>
 pnpm ys plan --cap i2v --duration 5         # provider ranking without spending money
 pnpm ys version
@@ -99,6 +106,8 @@ Useful options for `episode new`:
 - `--no-qa`: turn off the frame checks.
 - `--no-realism`: turn off the reality check.
 - `--vertical`: render in 9:16.
+- `--images upload`: you upload the images (ChatGPT etc.); no image spend.
+- `--voice voicevox:3`: a VOICEVOX voice (style id from the engine; 3 is ずんだもん).
 
 Run `pnpm ys --help` for everything.
 
@@ -109,6 +118,7 @@ Keys and switches live in `.env` (see `.env.example`). Notable ones:
 | Variable | Purpose |
 |---|---|
 | `FAL_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY` | Media providers. If a key is empty, that provider is disabled. |
+| `VOICEVOX_URL` | Local VOICEVOX engine (usually `http://127.0.0.1:50021`). `VOICEVOX_SPEED` sets the speaking speed, `VOICEVOX_DEFAULT_STYLE` the voice used when none is chosen. |
 | `ANTHROPIC_API_KEY` | Claude agents. If empty, the Claude Code login is used. |
 | `YS_MODEL_CREATIVE` / `_FAST` / `_CHEAP` | Default model for each tier. Per-agent choices on the Models page override these. |
 | `STORE=s3`, `LEDGER=db` | Use S3 and Postgres instead of local files. |

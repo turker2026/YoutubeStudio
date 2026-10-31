@@ -66,5 +66,11 @@ export function supports(adapter: ProviderAdapter, req: GenerationRequest): bool
   }
   if (req.aspectRatio && limits.aspectRatios && !limits.aspectRatios.includes(req.aspectRatio)) return false;
   if (limits.requiresVoiceId && !req.voiceId) return false;
+  if (limits.languages && req.language && !limits.languages.includes(req.language.split("-")[0]!.toLowerCase())) return false;
+  if (req.voiceId) {
+    // "kaynak:kimlik" biçimli ses yalnız o kaynağa ait; ön eksiz ses ön ek isteyen sağlayıcıya gitmez.
+    const owned = limits.voiceIdPrefix !== undefined && req.voiceId.startsWith(limits.voiceIdPrefix);
+    if (limits.voiceIdPrefix !== undefined ? !owned : /^[a-z]+:/.test(req.voiceId)) return false;
+  }
   return true;
 }

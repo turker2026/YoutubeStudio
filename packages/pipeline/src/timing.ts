@@ -1,5 +1,5 @@
 import type { ShotPlanOut } from "@ys/agents";
-import type { Timeline, VectorAsset, VectorShot, WordTiming } from "@ys/core";
+import { splitWords, type Timeline, type VectorAsset, type VectorShot, type WordTiming } from "@ys/core";
 import type { EpisodeState, PlannedShotState, SceneVoice } from "./state.ts";
 import { lineStyleOf } from "./state.ts";
 
@@ -11,7 +11,7 @@ export const SCENE_GAP_MS = 400;
  * Yerel WhisperX hizalaması gelene kadar altyazı ve kesim için yeterli doğrulukta.
  */
 export function estimateWordTimings(text: string, durationMs: number): WordTiming[] {
-  const words = text.split(/\s+/).filter(Boolean);
+  const words = splitWords(text);
   const weights = words.map((w) => w.length + 1);
   const total = weights.reduce((a, b) => a + b, 0);
   let cursor = 0;

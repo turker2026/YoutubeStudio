@@ -55,6 +55,13 @@ export interface ProviderLimits {
   maxDurationSec?: number;
   aspectRatios?: readonly AspectRatio[];
   requiresVoiceId?: boolean;
+  /** Yalnız bu dilleri seslendirir (ana dil kodu: "ja"). Yoksa her dil. */
+  languages?: readonly string[];
+  /**
+   * Ses kimliği bu ön ekle başlamalı ("voicevox:3"). Ön ekli kimlikler yalnız sahibine gider: VOICEVOX sesi
+   * ElevenLabs'e, ElevenLabs sesi VOICEVOX'a düşmez. Kimlik boşsa sağlayıcının varsayılan sesi.
+   */
+  voiceIdPrefix?: string;
 }
 
 export type PriceRule =
@@ -104,6 +111,8 @@ export interface ProviderAdapter {
   generate(req: GenerationRequest, ctx: GenerateContext): Promise<GenerationResult>;
   /** Kalan hesap kotası; işe başlamadan önce yetip yetmeyeceği kontrol edilir. */
   quota?(ctx: GenerateContext): Promise<Quota>;
+  /** Videoda zorunlu atıf satırı (ör. "VOICEVOX:ずんだもん"); açıklamaya yazılır. Gerekmiyorsa yok. */
+  credit?(voiceId: string | undefined, ctx: GenerateContext): Promise<string | undefined>;
 }
 
 /**

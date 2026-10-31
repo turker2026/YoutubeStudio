@@ -14,12 +14,19 @@ export const stageKey = (s: string) => `stage.${s}` as MessageKey;
  */
 export const approved = (state: EpisodeState, gate: "script" | "concept") => Boolean(state.input.autoApprove || state.approvals?.[gate]);
 
+/** Bölüm görsellerini kullanıcı mı yüklüyor (ChatGPT vb.); pipeline'daki usesUploads'un istemci kopyası. */
+export const uploadsImages = (state: EpisodeState) => state.input.imageSource === "upload";
+
+/** Onay bekleyen bölümde kararın verildiği sekme: bekleyen aşamanın kapısına göre. */
+export const waitTab = (stage: Stage | undefined): "script" | "concept" | "shots" =>
+  stage === "voice" ? "concept" : stage === "keyframes" ? "shots" : "script";
+
 /** Eylem: sunucu kabul ettiyse true (çağıran yalnız o zaman girdisini temizler). */
 export type Act = (action: Record<string, unknown>) => Promise<boolean>;
 
 /** Sunucudaki motionModeOf'un istemci kopyası (pipeline/light çalışma kodu istemciye alınamaz). */
-export const modeOf = (input: { motionMode?: "animated" | "mixed" | "still" | "vector"; aiClipRatio: number }) =>
-  input.motionMode ?? (input.aiClipRatio > 0 ? "mixed" : "still");
+export const modeOf = (input: { motionMode?: "animated" | "mixed" | "still" | "vector"; aiClipRatio: number; imageSource?: string }) =>
+  input.imageSource === "upload" ? "still" : (input.motionMode ?? (input.aiClipRatio > 0 ? "mixed" : "still"));
 
 export type Tab = "overview" | "script" | "concept" | "shots" | "costs" | "activity";
 export const TABS: Tab[] = ["overview", "script", "concept", "shots", "costs", "activity"];
@@ -31,11 +38,11 @@ export const STAGE_GROUPS: { key: "pre" | "prod" | "post"; stages: Stage[] }[] =
     key: "prod",
     stages: ["voice", "shots", "keyframes", "clips", "timeline", "render"],
   },
-  { key: "post", stages: ["review"] },
+  { key: "post", stages: ["package", "review"] },
 ];
 
 export const AFTER_SCRIPT: Stage[] = ["cast", "concept"];
-export const AFTER_CONCEPT: Stage[] = ["voice", "shots", "keyframes", "clips", "timeline", "render", "review"];
+export const AFTER_CONCEPT: Stage[] = ["voice", "shots", "keyframes", "clips", "timeline", "render", "package", "review"];
 
 /** Verilen aşamaların tahmini toplamı: "~$1.20 · ~4 dk". */
 export function costOf(est: EpisodeEstimate, stages: Stage[], { usd, duration }: Formatters): string {

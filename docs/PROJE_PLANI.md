@@ -57,6 +57,7 @@
 |---|---|---|
 | Anlatım / diyalog | **ElevenLabs Eleven v3** (`eleven_v3`, Şubat 2026'da GA) | 70+ dil, Türkçe dahil. Çok konuşmacılı diyalog, duygu etiketleri. **with-timestamps** ile kelime hizalama |
 | Hızlı / ucuz TTS | ElevenLabs Flash/Turbo | ~$0.05/1k karakter |
+| Japonca anlatım (yerel) | **VOICEVOX Engine** (`VOICEVOX_URL`, 31 Eki) | Ücretsiz, yerel. `audio_query` mora süreleri → cümlecik zamanlaması. Her karakterin kullanım şartı var; `VOICEVOX:<karakter>` kredisi paketleme açıklamasına kodla eklenir |
 | Müzik | **Eleven Music v2** (resmi API, ticari lisans) | ~$0.80/dk (fal) |
 | SFX | ElevenLabs `eleven_text_to_sound_v2` | ~$0.12/dk |
 | Lip-sync | **sync.so lipsync-2-pro** | ~$0.05/sn. Alternatif: VEED Fabric, Hedra |
@@ -212,12 +213,12 @@ CostEntry    { episodeId, stage, provider, units, unitPrice, total, at }
 | 3 | **Ses** | ElevenLabs v3 with-timestamps, sahne başına ayrı üretim (yeniden üretim ucuz kalsın), konuşmacı başına sabit voiceId | VoiceTrack + kelime zamanları | — |
 | 4 | **Çekim planı** | *Director* (Opus/Sonnet): ses zamanlarına göre shot list, kind dağılımı, kamera dili, `chainFromShotId`. **Bütçe kısıtı** burada uygulanır | Shot[] | — |
 | 5 | **Kitaplar** | *Art Director*: stil kitabı. *Character Designer*: turnaround ve ifade sayfası, gerekirse LoRA veya Kling Element. Kanal başına bir kez | StyleBible, Character, Location | 👤 İlk kez onay |
-| 6 | **Keyframe** | Media Gateway (Nano Banana Pro / FLUX.2, referanslarla). *Continuity Supervisor* (Claude vision) karakter benzerliği, stil, süreklilik defteri ve anatomi için 0–10 puan verir. Eşik altı otomatik yeniden üretilir (en fazla 3) | Onaylı keyframe'ler | 👤 Shot board hızlı onay |
+| 6 | **Keyframe** | *Kendi görsellerim* (31 Eki): `imageSource: "upload"` seçilirse kare üretilmez; her çekime görsel aracına (ChatGPT vb.) yapıştırılacak tam prompt yazılır, kullanıcı yükler ve `images` kapısında onaylar. Aksi halde: Media Gateway (Nano Banana Pro / FLUX.2, referanslarla). *Continuity Supervisor* (Claude vision) karakter benzerliği, stil, süreklilik defteri ve anatomi için 0–10 puan verir. Eşik altı otomatik yeniden üretilir (en fazla 3) | Onaylı keyframe'ler | 👤 Shot board hızlı onay |
 | 7 | **Hareket** | i2v: Kling 3.0 (varsayılan), Seedance 2.0 (çok karakter/referans), Veo 3.1 (hero ve extend). Zincirli çekimlerde önceki klibin son karesi → ilk kare. Klip QA: kare örnekleme + vision | Klipler | — |
 | 8 | **Ses tasarımı** | Müzik (Eleven Music, sahne duygusuna göre bölümler), SFX listesi (Director'dan), ducking, **-14 LUFS** | Mix stemleri | — |
 | 9 | **Montaj** | Timeline JSON → Remotion kompozisyonu. *Editor* ajanı gerekirse özel motion-graphic bileşeni yazar (Claude Code + Remotion skill'leri). Altyazılar `@remotion/captions` ile | Timeline + kompozisyon | — |
 | 10 | **Render ve QA** | Remotion render → FFmpeg post. Otomatik kontroller: süre, siyah kare, donma, ses tepe/LUFS, altyazı taşması. Vision ile 1 kare/5 sn tarama | final.mp4 | 👤 Final onay |
-| 11 | **Paketleme** | *Packager*: 3 başlık, açıklama, beat'lerden **bölümler (chapters)**, etiketler. Thumbnail için Nano Banana Pro ile 3 varyant | Metadata + thumbnail | 👤 (hızlı) |
+| 11 | **Paketleme** | *Packager*: 3 başlık, açıklama, beat'lerden **bölümler (chapters)**, etiketler. Thumbnail için Nano Banana Pro ile 3 varyant. **Uygulandı (31 Eki, `package` aşaması):** başlık/açıklama/bölüm/etiket; zaman damgaları, 10 sn kuralı, etiket sınırı ve atıflar kodda. Thumbnail henüz yok | Metadata + thumbnail | 👤 (hızlı) |
 | 12 | **Yayın** | YouTube Data API: upload, zamanlama, `containsSyntheticMedia` (gerekirse), thumbnail. A/B için YouTube'un "Test & Compare" özelliği | Yayınlanan video | — |
 | 13 | **Öğrenme döngüsü** | Analytics API: izlenme süresi eğrisi, CTR. Düşüş noktaları beat'lerle eşlenir. Bulgular kanalın "dersler" belleğine yazılır, Scout ve Story ajanları bunu okur | Kanal belleği | — |
 | L | **Yerelleştirme (dil başına, 2–12 paralel)** | Bkz. §15. Transcreation → TTS → yeniden zamanlama → lip-sync → yerel yazılar → render → yerel metadata/altyazı/thumbnail | Dil başına video veya ses kanalı | 👤 Dil başına hızlı onay (anadil kontrolü opsiyonel) |

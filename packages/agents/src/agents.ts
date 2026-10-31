@@ -1,3 +1,4 @@
+import { isUnspacedLang, splitWords } from "@ys/core";
 import { z } from "zod";
 import { lessonsBlock, models, runStructured, type AgentDeps, type AgentImage, type AgentResult } from "./runner.ts";
 import { CastOut, FrameReviewOut, ScriptDoctorOut, ScriptOut, ShotPlanOut, StoryOut, StyleBibleOut } from "./schemas.ts";
@@ -40,6 +41,22 @@ const WPM_BY_LANG: Record<string, number> = {
 
 export function wordsPerMinute(brief: Pick<EpisodeBrief, "lang" | "wordsPerMinute">): number {
   return brief.wordsPerMinute || WPM_BY_LANG[brief.lang.split("-")[0]!] || 140;
+}
+
+/**
+ * Boşluksuz dillerde dakikadaki karakter (noktalama hariç). ja: VOICEVOX hızı 1.0'da yaklaşık 6–7 mora/sn;
+ * kanji karışık metinde bu ≈ 300 karakter/dk. Kelime hedefi verilince model uzunluğu tutturamıyordu.
+ */
+const CPM_BY_LANG: Record<string, number> = { ja: 300, zh: 250 };
+
+/** Senaryonun uzunluk hedefi: boşluklu dillerde kelime, Japonca/Çincede karakter. */
+export function lengthBudget(brief: Pick<EpisodeBrief, "lang" | "wordsPerMinute" | "targetSec">): { amount: number; unit: string; rate: string } {
+  if (isUnspacedLang(brief.lang)) {
+    const cpm = CPM_BY_LANG[brief.lang.split("-")[0]!] ?? 300;
+    return { amount: Math.round((brief.targetSec / 60) * cpm), unit: "characters (punctuation excluded)", rate: `${cpm} characters/min` };
+  }
+  const wpm = wordsPerMinute(brief);
+  return { amount: Math.round((brief.targetSec / 60) * wpm), unit: "words", rate: `${wpm} wpm for this voice/language` };
 }
 
 export function artDirector(brief: EpisodeBrief, deps?: AgentDeps): Promise<AgentResult<StyleBibleOut>> {
@@ -111,8 +128,7 @@ Rules:
 }
 
 export function screenwriter(brief: EpisodeBrief, story: StoryOut, deps?: AgentDeps): Promise<AgentResult<ScriptOut>> {
-  const wpm = wordsPerMinute(brief);
-  const targetWords = Math.round((brief.targetSec / 60) * wpm);
+  const budget = lengthBudget(brief);
   return runStructured(
     {
       name: "screenwriter",
@@ -122,7 +138,7 @@ export function screenwriter(brief: EpisodeBrief, story: StoryOut, deps?: AgentD
       system: `You write voice-over narration for animated YouTube videos.
 Rules:
 - Narration language: ${brief.lang}. Write for the ear: one idea per sentence, varied sentence length, concrete nouns and verbs, show don't tell.
-- Total narration ≈ ${targetWords} words (${wpm} wpm for this voice/language). This is a hard length budget: stay within ±10%. Scenes 20–60 seconds each.
+- Total narration ≈ ${budget.amount} ${budget.unit} (${budget.rate}). This is a hard length budget: stay within ±10%. Scenes 20–60 seconds each.
 - Open with the story's hook moment, not a greeting. End every scene with a forward pull (a question, a consequence, a "but") that the next scene answers. Use callbacks to earlier details.
 - No filler ("as we all know", "interestingly"), no repetition of the same fact, rhetorical questions at most once per scene, no calls to subscribe.
 - Narration must be speakable: no brackets, emojis, stage directions or URLs. Spell out numbers.
@@ -138,8 +154,7 @@ Rules:
  * bölümler arası hangi kusurların tekrarlandığını görmek için.
  */
 export function scriptDoctor(brief: EpisodeBrief, story: StoryOut, draft: ScriptOut, deps?: AgentDeps): Promise<AgentResult<ScriptDoctorOut>> {
-  const wpm = wordsPerMinute(brief);
-  const targetWords = Math.round((brief.targetSec / 60) * wpm);
+  const budget = lengthBudget(brief);
   return runStructured(
     {
       name: "script-doctor",
@@ -153,7 +168,7 @@ Check and fix:
 - Pacing: cut repetition and filler; every scene must move the story; each scene ends with a forward pull.
 - Accuracy: remove or soften any claim that is not well established. Never add new facts you are unsure of.
 - Speakability in ${brief.lang}: short sentences, numbers spelled out, no tongue-twisters.
-- Length: keep total narration ≈ ${targetWords} words (±10%).
+- Length: keep total narration ≈ ${budget.amount} ${budget.unit} (±10%).
 Keep scene ids, beatIds and location names unchanged; you may rewrite narration, emotion and visualIntent. notes: the most important problems you fixed, in English, one line each, phrased as general rules a writer should follow next time.${lessonsBlock(brief.lessons)}`,
       prompt: `Story:\n${JSON.stringify(story, null, 2)}\n\nDraft script:\n${JSON.stringify(draft, null, 2)}`,
     },
@@ -161,9 +176,12 @@ Keep scene ids, beatIds and location names unchanged; you may rewrite narration,
   );
 }
 
-/** Anlatımı kelime indeksleriyle gösterir; Director çekim başlangıçlarını bu indekslerle verir. */
+/**
+ * Anlatımı kelime indeksleriyle gösterir; Director çekim başlangıçlarını bu indekslerle verir.
+ * Japonca gibi boşluksuz yazıda birim cümleciktir (ses zamanlaması da aynı birimi kullanır).
+ */
 export function indexWords(narration: string): { words: string[]; annotated: string } {
-  const words = narration.split(/\s+/).filter(Boolean);
+  const words = splitWords(narration);
   return { words, annotated: words.map((w, i) => `[${i}]${w}`).join(" ") };
 }
 

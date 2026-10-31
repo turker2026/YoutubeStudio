@@ -7,6 +7,7 @@ import { STYLE_AUTO, STYLE_CUSTOM, STYLE_PACKS, stylePackOf } from "@ys/core/sty
 import { useEffect, useRef, useState } from "react";
 import type { MessageKey } from "../lib/i18n";
 import { VOICES } from "../lib/voices";
+import { isVoicevox, useVoicevox, VoiceOptions, VoicevoxHint } from "./voice-options";
 import { errorKey } from "../lib/errors";
 import { useI18n } from "./locale-provider";
 
@@ -23,7 +24,9 @@ function estimateInput(form: HTMLFormElement) {
     lang: f.get("lang"),
     minutes: Number(f.get("minutes")),
     tier: f.get("tier"),
-    motionMode: f.get("motionMode"),
+    // Kendi görsellerini yükleyen bölüm her zaman hareketlendirilmiş resimdir (hareket seçimi kapalı, gönderilmez).
+    motionMode: f.get("imageSource") === "upload" ? "still" : f.get("motionMode"),
+    imageSource: f.get("imageSource"),
     voiceId: f.get("voiceId"),
     budgetUsd: Number(f.get("budgetUsd")),
     vertical: f.get("vertical") === "on",
@@ -42,6 +45,8 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
   const [estimates, setEstimates] = useState<Estimates>();
   const [mode, setMode] = useState<MotionMode>("animated");
   const [budget, setBudget] = useState(20);
+  const voicevox = useVoicevox();
+  const [uploads, setUploads] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const findSeries = (name: string) => series.find((s) => s.name.trim().toLocaleLowerCase("tr") === name.trim().toLocaleLowerCase("tr"));
   const [matched, setMatched] = useState<SeriesSummary | undefined>(() => (initialSeries ? findSeries(initialSeries) : undefined));
@@ -66,6 +71,22 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
     if (d.motionMode) setMode(d.motionMode);
     if (d.stylePack) setPack(d.stylePack);
     scheduleEstimate();
+  }
+
+  // Yüklenen görseller hareketlendirilmiş resim olur: kapalı hareket kutusu da bunu göstersin.
+  function pickImages(upload: boolean) {
+    setUploads(upload);
+    const el = formRef.current?.elements.namedItem("motionMode") as HTMLSelectElement | null;
+    if (el && upload) el.value = "still";
+  }
+
+  // VOICEVOX yalnız Japonca konuşur: Japonca seçilince yerel ses (varsa ずんだもん) önerilir, başka dile geçince bulut sesine dönülür.
+  function pickVoiceFor(lang: string) {
+    const el = formRef.current?.elements.namedItem("voiceId") as HTMLSelectElement | null;
+    if (!el) return;
+    const local = voicevox?.voices ?? [];
+    if (lang === "ja" && local.length && !isVoicevox(el.value)) el.value = (local.find((v) => v.id === "voicevox:3") ?? local[0]!).id;
+    else if (lang !== "ja" && isVoicevox(el.value)) el.value = VOICES[0]?.id ?? "";
   }
 
   // Form değiştikçe (400 ms gecikmeyle) maliyet/süre tahminini yenile. Para harcamaz.
@@ -104,7 +125,8 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
           lang: form.get("lang"),
           minutes: Number(form.get("minutes")),
           tier: form.get("tier"),
-          motionMode: form.get("motionMode"),
+          motionMode: form.get("imageSource") === "upload" ? "still" : form.get("motionMode"),
+          imageSource: form.get("imageSource"),
           voiceId: form.get("voiceId"),
           styleHint: form.get("styleHint"),
           series: form.get("series"),
@@ -177,7 +199,7 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
         </div>
         <p className="mt-1 text-xs text-muted">{stylePackOf(pack)
             ? t("form.stylePack.line", { line: t(`line.${stylePackOf(pack)!.lineStyle}` as MessageKey) })
-            : t(pack === STYLE_CUSTOM ? "form.stylePack.customHint" : "form.stylePack.autoHint")}</p>
+            : t(pack === STYLE_CUSTOM ? "form.stylePack.customHint" : "form.stylePack.autoHint", { n: STYLE_PACKS.length })}</p>
       </div>
       <div>
         <label className="label" htmlFor="styleHint">{t("form.style")}</label>
@@ -186,7 +208,7 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label" htmlFor="lang">{t("form.lang")}</label>
-          <select id="lang" name="lang" className="field" defaultValue="tr">
+          <select id="lang" name="lang" className="field" defaultValue="tr" onChange={(e) => pickVoiceFor(e.target.value)}>
             {LANGS.map((l) => (
               <option key={l} value={l}>{l}</option>
             ))}
@@ -198,7 +220,7 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
         </div>
         <div>
           <label className="label" htmlFor="motionMode">{t("form.motion")}</label>
-          <select id="motionMode" name="motionMode" className="field" defaultValue="animated">
+          <select id="motionMode" name="motionMode" className="field" defaultValue="animated" disabled={uploads}>
             <option value="animated">{t("motion.animated")}</option>
             <option value="mixed">{t("motion.mixed")}</option>
             <option value="still">{t("motion.still")}</option>
@@ -214,7 +236,15 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
           </select>
         </div>
       </div>
-      {mode === "vector" && (
+      <div>
+        <label className="label" htmlFor="imageSource">{t("form.images")}</label>
+        <select id="imageSource" name="imageSource" className="field" defaultValue="generate" onChange={(e) => pickImages(e.target.value === "upload")}>
+          <option value="generate">{t("form.images.generate")}</option>
+          <option value="upload">{t("form.images.upload")}</option>
+        </select>
+        {uploads && <p className="mt-1 text-xs text-muted">{t("form.images.uploadHint")}</p>}
+      </div>
+      {mode === "vector" && !uploads && (
         <div>
           <label className="label" htmlFor="lineStyle">{t("form.lineStyle")}</label>
           <select id="lineStyle" name="lineStyle" className="field" defaultValue="">
@@ -228,10 +258,9 @@ export function NewEpisodeForm({ series = [], initialSeries }: { series?: Series
       <div>
         <label className="label" htmlFor="voiceId">{t("form.voice")}</label>
         <select id="voiceId" name="voiceId" className="field" defaultValue={VOICES[0]?.id}>
-          {VOICES.map((v) => (
-            <option key={v.id} value={v.id}>{t(v.label)}</option>
-          ))}
+          <VoiceOptions voicevox={voicevox} />
         </select>
+        <VoicevoxHint voicevox={voicevox} />
       </div>
       <div className="grid grid-cols-2 items-end gap-3">
         <div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Film, GraduationCap, Stethoscope } from "lucide-react";
+import { Download, Film, GraduationCap, Megaphone, Stethoscope } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { stylePackOf } from "@ys/core/styles";
 import type { MessageKey } from "../../../lib/i18n";
@@ -8,6 +8,7 @@ import type { EpisodeResponse } from "../../../lib/types";
 import { VOICES } from "../../../lib/voices";
 import { useI18n } from "../../locale-provider";
 import { asset, Bar, Stat, modeOf } from "./parts";
+import { PromptBox } from "./upload-panel";
 
 export function OverviewTab({ data }: { data: EpisodeResponse }) {
   const { t, fmt } = useI18n();
@@ -51,10 +52,41 @@ export function OverviewTab({ data }: { data: EpisodeResponse }) {
             </a>
           </div>
         )}
+        <PackagePanel data={data} />
         <Review data={data} />
       </div>
       <Facts data={data} />
     </div>
+  );
+}
+
+/** YouTube paketi: başlık seçenekleri, yapıştırmaya hazır açıklama (bölümler, atıf, hashtag dahil) ve etiketler. */
+function PackagePanel({ data }: { data: EpisodeResponse }) {
+  const { t } = useI18n();
+  const pkg = data.state.package;
+  if (!pkg) return null;
+  return (
+    <Panel icon={<Megaphone size={16} />} title={t("ov.package")}>
+      <div className="grid gap-3 text-sm">
+        <div>
+          <div className="label">{t("ov.package.titles")}</div>
+          <div className="grid gap-1.5">
+            {pkg.titles.map((title, i) => (
+              <PromptBox key={i} id={`title-${i}`} text={title} />
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="label">{t("ov.package.description")}</div>
+          <PromptBox id="description" text={pkg.description} />
+        </div>
+        <div>
+          <div className="label">{t("ov.package.tags", { n: pkg.tags.length })}</div>
+          <PromptBox id="tags" text={pkg.tags.join(", ")} />
+        </div>
+        {pkg.credits.length > 0 && <p className="text-xs text-muted">{t("ov.package.credits", { credits: pkg.credits.join(", ") })}</p>}
+      </div>
+    </Panel>
   );
 }
 
@@ -169,7 +201,7 @@ function Facts({ data }: { data: EpisodeResponse }) {
     ...(pack ? [[t("fact.pack"), pack.name[locale]] as [string, ReactNode]] : []),
     ...(mode === "vector" ? [[t("fact.line"), t(`line.${input.lineStyle ?? pack?.lineStyle ?? "outline"}` as MessageKey)] as [string, ReactNode]] : []),
     [t("fact.tier"), t(`form.tier.${input.tier}` as MessageKey)],
-    [t("fact.voice"), voice ? t(voice.label) : (state.voiceProviderId ?? "—")],
+    [t("fact.voice"), voice ? t(voice.label) : (state.voiceCredit ?? input.voiceId ?? state.voiceProviderId ?? "—")],
     [t("fact.created"), fmt.date(state.createdAt)],
     [
       t("fact.id"),

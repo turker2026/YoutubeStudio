@@ -29,7 +29,7 @@ function readable(entry: ActivityEntry, t: Translate, duration: (s: number) => s
   const done = /^✓ (\w+)(?: \((\d+) sn\))?/.exec(entry.msg);
   if (done) return t("act.finished", { stage: t(stageKey(done[1]!)), time: done[2] ? ` · ${duration(Number(done[2]))}` : "" });
   const wait = /^⏸ onay bekleniyor: (\w+)/.exec(entry.msg);
-  if (wait) return t("act.waiting", { gate: t(wait[1] === "concept" ? "step.concept" : "step.script") });
+  if (wait) return t("act.waiting", { gate: t(wait[1] === "concept" ? "step.concept" : wait[1] === "images" ? "step.images" : "step.script") });
   return entry.msg;
 }
 

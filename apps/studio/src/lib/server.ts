@@ -13,6 +13,7 @@ import {
   type CostLedger,
   type ProviderAdapter,
   type Quota,
+  voicevoxSpeakers,
 } from "@ys/media-gateway";
 import { EpisodeRepo, liveLock, type EstimateContext } from "@ys/pipeline/light";
 import { createStoreFromEnv, type AssetStore } from "@ys/storage";
@@ -78,6 +79,36 @@ export async function quotaOf(providerId: string): Promise<Quota | undefined> {
   const quota = await gateway.quota(providerId);
   quotas.set(providerId, { at: Date.now(), quota });
   return quota;
+}
+
+export interface VoicevoxVoices {
+  /** VOICEVOX_URL tanımlı mı. */
+  enabled: boolean;
+  /** "voicevox:<stil>" kimlikli sesler; ad "Karakter（Stil）". */
+  voices: { id: string; name: string }[];
+  /** Motor açık değilse hata metni. */
+  error?: string;
+}
+
+const g2 = globalThis as unknown as { __ysVoicevox?: { at: number; value: VoicevoxVoices } };
+
+/** Yerel VOICEVOX motorundaki karakterler; motor açılıp kapanabildiği için 60 sn önbelleklenir. */
+export async function voicevoxVoices(): Promise<VoicevoxVoices> {
+  init();
+  const url = process.env.VOICEVOX_URL?.replace(/\/+$/, "");
+  if (!url) return { enabled: false, voices: [] };
+  const hit = g2.__ysVoicevox;
+  if (hit && Date.now() - hit.at < QUOTA_TTL_MS) return hit.value;
+  let value: VoicevoxVoices;
+  try {
+    const speakers = await voicevoxSpeakers(url, fetch, AbortSignal.timeout(3000));
+    const voices = speakers.flatMap((sp) => sp.styles.map((st) => ({ id: `voicevox:${st.id}`, name: `${sp.name}（${st.name}）` })));
+    value = { enabled: true, voices };
+  } catch (e) {
+    value = { enabled: true, voices: [], error: e instanceof Error ? e.message : String(e) };
+  }
+  g2.__ysVoicevox = { at: Date.now(), value };
+  return value;
 }
 
 // ---------------- arka plan işleri ----------------

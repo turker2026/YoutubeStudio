@@ -14,6 +14,7 @@ const GROUPS: { title: MessageKey; roles: AgentRole[] }[] = [
   },
   { title: "models.group.check", roles: ["asset-guess", "asset-gate", "scene-critic", "frame-inspector", "lesson-curator"] },
   { title: "models.group.image", roles: ["director"] },
+  { title: "models.group.publish", roles: ["packager"] },
 ];
 
 export function ModelsForm({ initial }: { initial: ModelSettings }) {

@@ -7,9 +7,10 @@ import { Check, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Mic, Refre
 import { useEffect, useState } from "react";
 import type { MessageKey } from "../../../lib/i18n";
 import type { EpisodeResponse, QuotaView } from "../../../lib/types";
-import { VOICES } from "../../../lib/voices";
 import { useI18n } from "../../locale-provider";
-import { AFTER_CONCEPT, AFTER_SCRIPT, approved as isApproved, asset, costOf, type Act, modeOf } from "./parts";
+import { useVoicevox, VoiceOptions, VoicevoxHint } from "../../voice-options";
+import { AFTER_CONCEPT, AFTER_SCRIPT, approved as isApproved, asset, costOf, type Act, modeOf, uploadsImages } from "./parts";
+import { PromptBox, UploadShots } from "./upload-panel";
 
 const MODES = ["animated", "mixed", "still", "vector"] as const;
 
@@ -140,6 +141,7 @@ export function ConceptTab({ data, busy, act }: { data: EpisodeResponse; busy: b
   const { t, fmt, locale } = useI18n();
   const { usd, duration } = fmt;
   const { state } = data;
+  const voicevox = useVoicevox();
   const { cast, concept, style } = state;
   const approved = isApproved(state, "concept");
   if (!cast || !concept) {
@@ -172,11 +174,13 @@ export function ConceptTab({ data, busy, act }: { data: EpisodeResponse; busy: b
       character: false,
     })),
   ];
-  const missing = entities.filter((e) => !concept.selected[e.id]).length;
+  const uploads = uploadsImages(state);
+  const missing = uploads ? 0 : entities.filter((e) => !concept.selected[e.id]).length;
   const mode = modeOf(state.input);
   const est = data.estimates[mode];
   const quotaShort = data.quota && data.quota.quota.limit - data.quota.quota.used < data.quota.needed;
-  const locked = approved || busy;
+  // Yükleme modunda hareket modu sabit ("still"), seçilecek aday görsel yok.
+  const locked = approved || busy || uploads;
 
   return (
     <div className="grid gap-6">
@@ -208,6 +212,7 @@ export function ConceptTab({ data, busy, act }: { data: EpisodeResponse; busy: b
             <p className="mb-3 line-clamp-2 text-xs text-muted" title={e.desc}>
               {e.desc}
             </p>
+            {uploads && <PromptBox id={e.id} text={state.sheetPrompts?.[e.id]} />}
             <div className="grid grid-cols-3 gap-2">
               {(concept.candidates[e.id] ?? []).map((c, i) => {
                 const selected = concept.selected[e.id]?.key === c.key;
@@ -233,12 +238,14 @@ export function ConceptTab({ data, busy, act }: { data: EpisodeResponse; busy: b
                 );
               })}
             </div>
-            {e.character && !locked && <ReuseFromLibrary data={data} castId={e.id} act={act} />}
+            {e.character && !locked && !uploads && <ReuseFromLibrary data={data} castId={e.id} act={act} />}
           </div>
         ))}
       </div>
 
-      {!approved && (
+      {uploads && <p className="rounded-xl border border-accent/40 bg-accent/5 p-3 text-sm text-muted">{t("upload.conceptHelp")}</p>}
+
+      {!approved && !uploads && (
         <div className="flex flex-wrap gap-3">
           <button className="btn-ghost" disabled={busy} onClick={() => act({ type: "regenerate-concept" })}>
             <RefreshCw size={16} /> {t("concept.regenerate")}
@@ -278,18 +285,15 @@ export function ConceptTab({ data, busy, act }: { data: EpisodeResponse; busy: b
             disabled={busy || Boolean(state.done.voice)}
             onChange={(e) => act({ type: "change-voice", voiceId: e.target.value })}
           >
-            {VOICES.map((v) => (
-              <option key={v.id} value={v.id}>
-                {t(v.label)}
-              </option>
-            ))}
+            <VoiceOptions voicevox={voicevox} current={state.input.voiceId} />
           </select>
+          <VoicevoxHint voicevox={voicevox} />
           {data.quota && <QuotaBox q={data.quota} />}
         </div>
         <div>
           <div className="label">{t("concept.motion")}</div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {MODES.filter((m) => data.estimates[m]).map((m) => {
+            {MODES.filter((m) => data.estimates[m] && (!uploads || m === "still")).map((m) => {
               const e = data.estimates[m];
               return (
                 <button
@@ -547,7 +551,8 @@ export function ShotsTab({ data, busy, act }: { data: EpisodeResponse; busy: boo
   const failedQa = shots.filter((s) => state.qa?.[s.id] && !state.qa[s.id]!.passed).map((s) => s.id);
   const kfRow = data.estimates[modeOf(state.input)].rows.find((r) => r.stage === "keyframes");
   const perFrame = kfRow && kfRow.quantity ? kfRow.costUsd / kfRow.quantity : 0;
-  if (!shots.length) return <Empty>{t("shots.empty")}</Empty>;
+  if (!shots.length) return <Empty>{t(uploadsImages(state) ? "upload.empty" : "shots.empty")}</Empty>;
+  if (uploadsImages(state) && !state.done.render) return <UploadShots data={data} busy={busy} act={act} />;
 
   const toggle = (id: string) =>
     setPicked((prev) => {

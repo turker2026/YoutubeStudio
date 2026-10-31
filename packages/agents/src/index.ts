@@ -3,3 +3,4 @@ export * from "./runner.ts";
 export * from "./schemas.ts";
 export * from "./vector.ts";
 export * from "./review.ts";
+export * from "./package.ts";

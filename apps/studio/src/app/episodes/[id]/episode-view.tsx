@@ -12,7 +12,7 @@ import { useI18n } from "../../locale-provider";
 import { ActivityLine, ActivityTab } from "./activity";
 import { CostsTab } from "./costs-panel";
 import { OverviewTab } from "./overview";
-import { Badge, Bar, modeOf, STAGE_GROUPS, STATUS_TONE, StatusIcon, stageKey, TABS, type Act, type Tab } from "./parts";
+import { Badge, Bar, modeOf, STAGE_GROUPS, STATUS_TONE, StatusIcon, stageKey, TABS, waitTab, type Act, type Tab } from "./parts";
 import { ConceptTab, ScriptTab, ShotsTab } from "./steps";
 
 export function EpisodeView({ id }: { id: string }) {
@@ -92,9 +92,7 @@ export function EpisodeView({ id }: { id: string }) {
   const active: Tab =
     tab ??
     (status.status === "waiting"
-      ? status.stage !== "voice"
-        ? "script"
-        : "concept"
+      ? waitTab(status.stage)
       : status.status === "running"
         ? "activity"
         : "overview");
@@ -389,9 +387,9 @@ function LivePanel({ data, busy, act, onTab }: { data: EpisodeResponse; busy: bo
     }
     case "waiting":
       headline = t("status.waiting");
-      body = <p className="text-sm text-muted">{t(status.stage !== "voice" ? "live.waiting.script" : "live.waiting.concept")}</p>;
+      body = <p className="text-sm text-muted">{t(({ script: "live.waiting.script", concept: "live.waiting.concept", shots: "live.waiting.images" } as const)[waitTab(status.stage)])}</p>;
       actions = (
-        <button className="btn-primary py-1.5 text-xs" onClick={() => onTab(status.stage !== "voice" ? "script" : "concept")}>
+        <button className="btn-primary py-1.5 text-xs" onClick={() => onTab(waitTab(status.stage))}>
           {t("live.goApprove")}
         </button>
       );
